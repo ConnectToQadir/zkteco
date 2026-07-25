@@ -1,0 +1,15 @@
+node_modules/
+npm-debug.log*
+logs/
+*.log
+config.json
+config.enc
+license/license.dat
+.DS_Store
+dist/
+build/
+obfuscated/
+*.exe
+.env
+.idea/
+.vscode/

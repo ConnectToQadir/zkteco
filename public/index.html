@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PunchType Settings</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div>
+          <p class="eyebrow">Local settings</p>
+          <h1>PunchType</h1>
+          <p class="subtitle">ZKTeco punch → keyboard typing utility</p>
+        </div>
+        <div class="header-meta">
+          <span id="statusBadge" class="badge">Loading…</span>
+          <span id="deviceBadge" class="badge">Device: —</span>
+          <button type="button" id="lockBtn" class="btn btn-ghost hidden">Lock</button>
+        </div>
+      </header>
+
+      <section id="gatePanel" class="panel">
+        <h2 id="gateTitle">Unlock settings</h2>
+        <p id="gateHelp" class="help">Enter your local PIN to manage PunchType on this computer.</p>
+        <form id="gateForm" class="form">
+          <label>
+            PIN
+            <input id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required />
+          </label>
+          <label id="confirmPinWrap" class="hidden">
+            Confirm PIN
+            <input id="confirmPinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" />
+          </label>
+          <button type="submit" id="gateSubmit" class="btn btn-primary">Unlock</button>
+        </form>
+        <p id="gateMessage" class="message" role="status"></p>
+      </section>
+
+      <section id="settingsPanel" class="hidden">
+        <form id="configForm" class="panel form">
+          <h2>Device</h2>
+          <div class="grid">
+            <label>
+              Device IP
+              <input id="deviceIp" name="deviceIp" type="text" placeholder="192.168.1.201" />
+            </label>
+            <label>
+              Device Port
+              <input id="devicePort" name="devicePort" type="number" min="1" max="65535" />
+            </label>
+            <label class="full">
+              Device Communication Password
+              <input id="devicePassword" name="devicePassword" type="password" placeholder="Leave blank if not required" autocomplete="off" />
+              <span class="hint">Optional. Leave blank when your device does not use a communication password.</span>
+            </label>
+          </div>
+
+          <h2>Typing</h2>
+          <div class="grid">
+            <label>
+              Typing Delay (ms)
+              <input id="typingDelay" name="typingDelay" type="number" min="0" max="5000" />
+            </label>
+            <label>
+              Duplicate Punch Seconds
+              <input id="duplicateSeconds" name="duplicateSeconds" type="number" min="0" max="3600" />
+            </label>
+            <label class="checkbox">
+              <input id="pressEnter" name="pressEnter" type="checkbox" />
+              Press ENTER after typing
+            </label>
+          </div>
+
+          <h2>Application</h2>
+          <div class="grid">
+            <label>
+              Settings HTTP Port
+              <input id="httpPort" name="httpPort" type="number" min="1" max="65535" />
+              <span class="hint">Loopback only. Restart required after changing.</span>
+            </label>
+            <label class="checkbox">
+              <input id="autoStart" name="autoStart" type="checkbox" />
+              Start with Windows
+            </label>
+            <label class="checkbox">
+              <input id="logging" name="logging" type="checkbox" />
+              Enable logging
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <button type="button" id="testDeviceBtn" class="btn">Test Device Connection</button>
+            <button type="button" id="restartBtn" class="btn">Restart Service</button>
+          </div>
+          <p id="configMessage" class="message" role="status"></p>
+        </form>
+
+        <div class="panel">
+          <h2>License Information</h2>
+          <dl class="meta-list" id="licenseInfo">
+            <div><dt>Machine ID</dt><dd id="machineId">—</dd></div>
+            <div><dt>Customer Name</dt><dd id="customerName">—</dd></div>
+            <div><dt>License Status</dt><dd id="licenseStatus">—</dd></div>
+          </dl>
+          <p class="hint">Full license verification arrives in Phase 7.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Change PIN</h2>
+          <form id="changePinForm" class="form grid">
+            <label>
+              Current PIN
+              <input id="currentPin" type="password" inputmode="numeric" maxlength="8" required />
+            </label>
+            <label>
+              New PIN
+              <input id="newPin" type="password" inputmode="numeric" maxlength="8" required />
+            </label>
+            <div class="actions full">
+              <button type="submit" class="btn">Update PIN</button>
+            </div>
+          </form>
+          <p id="pinMessage" class="message" role="status"></p>
+        </div>
+
+        <div class="panel">
+          <h2>Recent Logs</h2>
+          <pre id="logsView" class="logs">No logs yet.</pre>
+          <button type="button" id="refreshLogsBtn" class="btn">Refresh Logs</button>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span id="footerStatus">PunchType</span>
+      </footer>
+    </div>
+    <script src="/script.js"></script>
+  </body>
+</html>

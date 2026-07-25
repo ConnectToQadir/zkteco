@@ -1,0 +1,27 @@
+{
+  "name": "punchtype",
+  "version": "1.0.0",
+  "description": "PunchType — ZKTeco attendance punch to keyboard typing utility",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "zkteco",
+    "attendance",
+    "keyboard",
+    "windows"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-zklib": "^1.3.0",
+    "zkteco-js": "^1.7.2"
+  }
+}
