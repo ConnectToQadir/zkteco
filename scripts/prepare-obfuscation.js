@@ -26,12 +26,16 @@ const SENSITIVE_GLOBS = [
 const OBFUSCATOR_OPTIONS = {
   compact: true,
   controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.5,
   deadCodeInjection: false,
   stringArray: true,
-  stringArrayThreshold: 0.75,
+  stringArrayThreshold: 0.5,
+  // Critical for pkg: do not rewrite require('...') paths
+  ignoreRequireImports: true,
   // Keep require()/exports working for CommonJS
   target: 'node',
   identifierNamesGenerator: 'hexadecimal',
+  simplify: true,
 };
 
 function rimraf(dir) {
