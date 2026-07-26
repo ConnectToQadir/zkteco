@@ -47,32 +47,57 @@ function main() {
   const outDir = path.join(ROOT, 'obfuscated', 'out');
   fs.mkdirSync(DIST, { recursive: true });
 
-  const pkgBin = path.join(
-    ROOT,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'pkg.cmd' : 'pkg',
-  );
+  const pkgBinName = process.platform === 'win32' ? 'pkg.cmd' : 'pkg';
+  const pkgBin = path.join(ROOT, 'node_modules', '.bin', pkgBinName);
+  const pkgCliJs = path.join(ROOT, 'node_modules', 'pkg', 'lib-es5', 'bin.js');
 
   // eslint-disable-next-line no-console
   console.log('2/3 Building PunchType.exe (node18-win-x64)...');
-  const result = spawnSync(
-    pkgBin,
-    [
-      path.join(outDir, 'src', 'index.js'),
-      '--targets',
-      'node18-win-x64',
-      '--output',
-      path.join(DIST, 'PunchType.exe'),
-      '--config',
-      path.join(ROOT, 'package.json'),
-    ],
-    {
-      cwd: ROOT,
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-    },
-  );
+
+  let result;
+  if (fs.existsSync(pkgBin)) {
+    result = spawnSync(
+      pkgBin,
+      [
+        path.join(outDir, 'src', 'index.js'),
+        '--targets',
+        'node18-win-x64',
+        '--output',
+        path.join(DIST, 'PunchType.exe'),
+        '--config',
+        path.join(ROOT, 'package.json'),
+      ],
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+      },
+    );
+  } else if (fs.existsSync(pkgCliJs)) {
+    result = spawnSync(
+      process.execPath,
+      [
+        pkgCliJs,
+        path.join(outDir, 'src', 'index.js'),
+        '--targets',
+        'node18-win-x64',
+        '--output',
+        path.join(DIST, 'PunchType.exe'),
+        '--config',
+        path.join(ROOT, 'package.json'),
+      ],
+      {
+        cwd: ROOT,
+        stdio: 'inherit',
+        shell: false,
+      },
+    );
+  } else {
+    // eslint-disable-next-line no-console
+    console.error('pkg is not installed. Run: npm install');
+    process.exitCode = 1;
+    return;
+  }
 
   if (result.status !== 0) {
     // eslint-disable-next-line no-console

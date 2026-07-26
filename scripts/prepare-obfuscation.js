@@ -2,13 +2,13 @@
 
 /**
  * Prepare production JS for obfuscation.
- * Copies runtime sources into obfuscated/staging then runs javascript-obfuscator
- * on selected service modules (keeps Express entry readable enough to boot).
+ * Copies runtime sources into obfuscated/staging then obfuscates selected modules
+ * using the javascript-obfuscator Node API (works on Windows + macOS).
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const JavaScriptObfuscator = require('javascript-obfuscator');
 
 const ROOT = path.resolve(__dirname, '..');
 const STAGE = path.join(ROOT, 'obfuscated', 'staging');
@@ -22,6 +22,17 @@ const SENSITIVE_GLOBS = [
   'src/services/keyboard/Win32SendInputTyper.js',
   'src/utils/windowsBackground.js',
 ];
+
+const OBFUSCATOR_OPTIONS = {
+  compact: true,
+  controlFlowFlattening: true,
+  deadCodeInjection: false,
+  stringArray: true,
+  stringArrayThreshold: 0.75,
+  // Keep require()/exports working for CommonJS
+  target: 'node',
+  identifierNamesGenerator: 'hexadecimal',
+};
 
 function rimraf(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
@@ -43,6 +54,12 @@ function copyDir(src, dest) {
   }
 }
 
+function obfuscateFile(filePath) {
+  const source = fs.readFileSync(filePath, 'utf8');
+  const result = JavaScriptObfuscator.obfuscate(source, OBFUSCATOR_OPTIONS);
+  fs.writeFileSync(filePath, result.getObfuscatedCode(), 'utf8');
+}
+
 function main() {
   rimraf(STAGE);
   rimraf(OUT);
@@ -53,7 +70,7 @@ function main() {
   copyDir(path.join(ROOT, 'public'), path.join(STAGE, 'public'));
   fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(STAGE, 'package.json'));
 
-  const obfuscatorBin = path.join(ROOT, 'node_modules', '.bin', 'javascript-obfuscator');
+  let count = 0;
   for (const rel of SENSITIVE_GLOBS) {
     const target = path.join(STAGE, rel);
     if (!fs.existsSync(target)) {
@@ -61,32 +78,17 @@ function main() {
       console.warn('skip missing', rel);
       continue;
     }
-    execFileSync(
-      obfuscatorBin,
-      [
-        target,
-        '--output',
-        target,
-        '--compact',
-        'true',
-        '--control-flow-flattening',
-        'true',
-        '--dead-code-injection',
-        'false',
-        '--string-array',
-        'true',
-        '--string-array-threshold',
-        '0.75',
-      ],
-      { stdio: 'inherit' },
-    );
+    // eslint-disable-next-line no-console
+    console.log('Obfuscating', rel);
+    obfuscateFile(target);
+    count += 1;
   }
 
   copyDir(STAGE, OUT);
   // eslint-disable-next-line no-console
   console.log('Obfuscation staging ready at obfuscated/out');
   // eslint-disable-next-line no-console
-  console.log('Sensitive modules obfuscated:', SENSITIVE_GLOBS.length);
+  console.log('Sensitive modules obfuscated:', count);
 }
 
 main();
