@@ -15,7 +15,13 @@ They do **not** need a zip of folders.
 4. Optional: start with Windows
 5. They can **delete** the downloaded Setup.exe afterward
 
-Installed folder contains exe + `public`, `keys`, `license`, `logs` automatically.
+Installed folder contains the exe plus read-only assets (`public`, `keys`).
+
+Writable data (config, license, logs) is stored under:
+
+`%LOCALAPPDATA%\PunchType\`
+
+(e.g. `C:\Users\<You>\AppData\Local\PunchType\`) — not under Program Files, so license upload works without Administrator rights.
 
 ## How you build it (on Windows)
 

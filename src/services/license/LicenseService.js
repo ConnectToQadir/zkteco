@@ -2,7 +2,11 @@
 
 const fs = require('fs/promises');
 const path = require('path');
-const { getLicensePath } = require('../../utils/paths');
+const {
+  getLicensePath,
+  getLegacyInstallLicensePath,
+  ensureDataDirs,
+} = require('../../utils/paths');
 const { AppError } = require('../../utils/errors');
 const { HardwareFingerprint } = require('./HardwareFingerprint');
 const { RsaVerifier } = require('./RsaVerifier');
@@ -22,7 +26,9 @@ class LicenseService {
    * }} [options]
    */
   constructor(options = {}) {
+    ensureDataDirs();
     this._licensePath = options.licensePath || getLicensePath();
+    this._legacyLicensePath = options.legacyLicensePath || getLegacyInstallLicensePath();
     this._fingerprint = options.fingerprint || new HardwareFingerprint();
     this._verifier = options.verifier || new RsaVerifier();
     this._productVersion = options.productVersion || '1.0.0';
@@ -87,6 +93,7 @@ class LicenseService {
   /**
    * Install a license file from Settings UI upload.
    * Validates signature + machine binding before writing to disk.
+   * Writes under the writable data folder (not Program Files).
    * @param {string} content UTF-8 license.dat contents
    * @returns {Promise<object>} fresh license info
    */
@@ -131,6 +138,7 @@ class LicenseService {
       );
     }
 
+    ensureDataDirs();
     const dir = path.dirname(this._licensePath);
     await fs.mkdir(dir, { recursive: true });
 
@@ -143,17 +151,42 @@ class LicenseService {
       2,
     )}\n`;
 
-    const tempPath = `${this._licensePath}.tmp`;
-    await fs.writeFile(tempPath, normalized, 'utf8');
-    await fs.rename(tempPath, this._licensePath);
+    try {
+      // Direct write into AppData — avoid rename failures and Program Files UAC.
+      await fs.writeFile(this._licensePath, normalized, 'utf8');
+    } catch (error) {
+      await this._logger.error('License validation', {
+        status: 'write_error',
+        error: error.message,
+        path: this._licensePath,
+      });
+      throw new AppError(
+        `Could not save license file (${error.message}). Try running PunchType as a normal user; data is stored under Local AppData.`,
+        500,
+        'LICENSE_WRITE_FAILED',
+      );
+    }
 
-    this.clearCache();
+    const info = {
+      status: 'valid',
+      valid: true,
+      machineId,
+      customerName: payload.customerName || null,
+      productVersion: payload.productVersion || this._productVersion,
+      issuedAt: payload.issuedAt || null,
+      featureFlags: payload.featureFlags || {},
+      message: 'License is valid for this computer.',
+    };
+
+    this._cachedInfo = info;
+    this._cachedAt = Date.now();
+
     await this._logger.info('License validation', {
       status: 'installed',
       customerName: payload.customerName,
     });
 
-    return this.getInfo({ force: true });
+    return { ...info };
   }
 
   /**
@@ -166,29 +199,38 @@ class LicenseService {
       raw = await fs.readFile(this._licensePath, 'utf8');
     } catch (error) {
       if (error && error.code === 'ENOENT') {
-        await this._logger.info('License validation', { status: 'missing' });
+        const migrated = await this._tryMigrateLegacyLicense();
+        if (migrated) {
+          raw = migrated;
+        } else {
+          await this._logger.info('License validation', { status: 'missing' });
+          return {
+            status: 'missing',
+            valid: false,
+            machineId,
+            customerName: null,
+            productVersion: null,
+            issuedAt: null,
+            featureFlags: {},
+            message: 'No license.dat found. Typing is disabled until licensed.',
+          };
+        }
+      } else {
+        await this._logger.error('License validation', {
+          status: 'read_error',
+          error: error.message,
+        });
         return {
-          status: 'missing',
+          status: 'error',
           valid: false,
           machineId,
           customerName: null,
           productVersion: null,
           issuedAt: null,
           featureFlags: {},
-          message: 'No license.dat found. Typing is disabled until licensed.',
+          message: 'Unable to read license file.',
         };
       }
-      await this._logger.error('License validation', { status: 'read_error', error: error.message });
-      return {
-        status: 'error',
-        valid: false,
-        machineId,
-        customerName: null,
-        productVersion: null,
-        issuedAt: null,
-        featureFlags: {},
-        message: 'Unable to read license file.',
-      };
     }
 
     let parsed;
@@ -246,6 +288,30 @@ class LicenseService {
       featureFlags: payload.featureFlags || {},
       message: 'License is valid for this computer.',
     };
+  }
+
+  /**
+   * Move license.dat from Program Files (old installs) into AppData.
+   * @returns {Promise<string|null>} file contents when migrated
+   */
+  async _tryMigrateLegacyLicense() {
+    try {
+      if (path.resolve(this._legacyLicensePath) === path.resolve(this._licensePath)) {
+        return null;
+      }
+      const raw = await fs.readFile(this._legacyLicensePath, 'utf8');
+      ensureDataDirs();
+      await fs.mkdir(path.dirname(this._licensePath), { recursive: true });
+      await fs.writeFile(this._licensePath, raw, 'utf8');
+      try {
+        await fs.unlink(this._legacyLicensePath);
+      } catch (_unlinkError) {
+        // Program Files delete often fails without elevation — ignore.
+      }
+      return raw;
+    } catch (_error) {
+      return null;
+    }
   }
 
   /**

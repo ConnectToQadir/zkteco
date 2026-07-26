@@ -1,18 +1,31 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-function getInstallRoot() {
-  if (process.pkg) {
-    return path.dirname(process.execPath);
+/**
+ * Writable log root (must not rely on Program Files under UAC).
+ * @returns {string}
+ */
+function getDataRoot() {
+  const execPath = process.execPath || '';
+  const packaged =
+    Boolean(process.pkg) || /punchtype(\.exe)?$/i.test(path.basename(execPath));
+
+  if (packaged && process.platform === 'win32') {
+    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(base, 'PunchType');
+  }
+  if (packaged) {
+    return path.join(os.homedir(), '.punchtype');
   }
   return path.resolve(__dirname, '..');
 }
 
 function writeStartupError(error) {
   try {
-    const root = getInstallRoot();
+    const root = getDataRoot();
     const logsDir = path.join(root, 'logs');
     fs.mkdirSync(logsDir, { recursive: true });
     const file = path.join(logsDir, 'startup-error.log');

@@ -16,6 +16,7 @@ const {
   applyBackgroundMode,
   isBackgroundRequested,
 } = require('./utils/windowsBackground');
+const { ensureDataDirs } = require('./utils/paths');
 
 const PRODUCT_NAME = 'PunchType';
 const VERSION = '1.0.0';
@@ -25,6 +26,7 @@ const VERSION = '1.0.0';
  */
 async function createApp() {
   const startedAt = Date.now();
+  ensureDataDirs();
   const background = applyBackgroundMode();
 
   const configService = new ConfigService();

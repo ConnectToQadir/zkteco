@@ -2,10 +2,13 @@
 
 const crypto = require('crypto');
 const fs = require('fs/promises');
+const path = require('path');
 const { AppError } = require('../../utils/errors');
 const {
   getConfigEncPath,
   getLegacyConfigJsonPath,
+  getLegacyInstallConfigEncPath,
+  ensureDataDirs,
 } = require('../../utils/paths');
 const { createDefaultConfig, toPublicConfig } = require('./defaults');
 const {
@@ -32,8 +35,11 @@ class ConfigService {
    * }} [options]
    */
   constructor(options = {}) {
+    ensureDataDirs();
     this._configPath = options.configPath || getConfigEncPath();
     this._legacyConfigPath = options.legacyConfigPath || getLegacyConfigJsonPath();
+    this._legacyInstallConfigPath =
+      options.legacyInstallConfigPath || getLegacyInstallConfigEncPath();
     /** @type {import('./defaults').AppConfig | null} */
     this._cache = null;
   }
@@ -53,6 +59,11 @@ class ConfigService {
       return { ...this._cache };
     } catch (error) {
       if (error && error.code === 'ENOENT') {
+        const migratedInstall = await this._tryMigrateInstallEnc();
+        if (migratedInstall) {
+          return { ...this._cache };
+        }
+
         const migrated = await this._tryMigrateLegacyJson();
         if (migrated) {
           return { ...this._cache };
@@ -164,36 +175,80 @@ class ConfigService {
   }
 
   /**
-   * @returns {Promise<boolean>} true when migration succeeded
+   * Copy config.enc from Program Files (old installs) into the writable data folder.
+   * @returns {Promise<boolean>}
    */
-  async _tryMigrateLegacyJson() {
+  async _tryMigrateInstallEnc() {
     try {
-      const raw = await fs.readFile(this._legacyConfigPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      this._cache = this._normalize(parsed);
+      if (
+        path.resolve(this._configPath) === path.resolve(this._legacyInstallConfigPath)
+      ) {
+        return false;
+      }
+      const encrypted = await fs.readFile(this._legacyInstallConfigPath);
+      const decrypted = await decryptConfigObject(encrypted);
+      this._cache = this._normalize(decrypted);
       await this._persist(this._cache);
-      await this._removeLegacyJson();
+      await this._tryUnlink(this._legacyInstallConfigPath);
       return true;
     } catch (error) {
       if (error && error.code === 'ENOENT') {
         return false;
       }
-      throw new AppError(
-        `Failed to migrate legacy configuration: ${error.message}`,
-        500,
-        'CONFIG_MIGRATE_FAILED',
-      );
+      // Non-fatal: fall through to other migrate / defaults
+      // eslint-disable-next-line no-console
+      console.warn('[PunchType] Could not migrate install config.enc:', error.message);
+      return false;
     }
   }
 
-  async _removeLegacyJson() {
+  /**
+   * @returns {Promise<boolean>} true when migration succeeded
+   */
+  async _tryMigrateLegacyJson() {
+    const candidates = [this._legacyConfigPath];
+    const installJson = path.join(
+      path.dirname(this._legacyInstallConfigPath),
+      'config.json',
+    );
+    if (path.resolve(installJson) !== path.resolve(this._legacyConfigPath)) {
+      candidates.push(installJson);
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const raw = await fs.readFile(candidate, 'utf8');
+        const parsed = JSON.parse(raw);
+        this._cache = this._normalize(parsed);
+        await this._persist(this._cache);
+        await this._tryUnlink(candidate);
+        return true;
+      } catch (error) {
+        if (error && error.code === 'ENOENT') {
+          continue;
+        }
+        throw new AppError(
+          `Failed to migrate legacy configuration: ${error.message}`,
+          500,
+          'CONFIG_MIGRATE_FAILED',
+        );
+      }
+    }
+    return false;
+  }
+
+  /**
+   * @param {string} filePath
+   * @returns {Promise<void>}
+   */
+  async _tryUnlink(filePath) {
     try {
-      await fs.unlink(this._legacyConfigPath);
+      await fs.unlink(filePath);
     } catch (error) {
       if (!error || error.code !== 'ENOENT') {
-        // Non-fatal: encrypted file is source of truth after migration.
+        // Non-fatal (often blocked under Program Files without elevation).
         // eslint-disable-next-line no-console
-        console.warn('[PunchType] Could not remove legacy config.json:', error.message);
+        console.warn('[PunchType] Could not remove legacy file:', filePath, error.message);
       }
     }
   }
@@ -204,9 +259,16 @@ class ConfigService {
    */
   async _persist(config) {
     const payload = await encryptConfigObject(config);
+    const dir = path.dirname(this._configPath);
+    await fs.mkdir(dir, { recursive: true });
     const tempPath = `${this._configPath}.tmp`;
     await fs.writeFile(tempPath, payload);
-    await fs.rename(tempPath, this._configPath);
+    try {
+      await fs.rename(tempPath, this._configPath);
+    } catch (_renameError) {
+      await fs.writeFile(this._configPath, payload);
+      await this._tryUnlink(tempPath);
+    }
   }
 
   /**
