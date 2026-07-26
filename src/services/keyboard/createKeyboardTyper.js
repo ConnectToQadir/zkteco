@@ -7,9 +7,18 @@ const { StubKeyboardTyper } = require('./StubKeyboardTyper');
  */
 function createKeyboardTyper() {
   if (process.platform === 'win32') {
-    // Lazy require so macOS/Linux installs do not load user32 bindings at import time.
-    const { Win32SendInputTyper } = require('./Win32SendInputTyper');
-    return new Win32SendInputTyper();
+    try {
+      // Lazy require so packaging issues with koffi do not crash the whole app.
+      const { Win32SendInputTyper } = require('./Win32SendInputTyper');
+      return new Win32SendInputTyper();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[PunchType] Win32 keyboard typer failed to load; using stub until fixed:',
+        error.message,
+      );
+      return new StubKeyboardTyper();
+    }
   }
   return new StubKeyboardTyper();
 }

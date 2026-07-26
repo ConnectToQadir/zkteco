@@ -7,8 +7,12 @@ const path = require('path');
  * @returns {string}
  */
 function getAppRoot() {
-  if (process.pkg) {
-    return path.dirname(process.execPath);
+  const execPath = process.execPath || '';
+  const packaged =
+    Boolean(process.pkg) || /punchtype(\.exe)?$/i.test(path.basename(execPath));
+
+  if (packaged) {
+    return path.dirname(execPath);
   }
   // src/utils -> src -> project root
   return path.resolve(__dirname, '..', '..');

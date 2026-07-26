@@ -71,8 +71,12 @@ Name: "{app}"; Permissions: users-modify
 Source: "..\dist\PunchType.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\public\*"; DestDir: "{app}\public"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\dist\keys\*"; DestDir: "{app}\keys"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Optional native helper copy (if present after build)
+Source: "..\dist\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; Settings shortcut helper
 Source: "PunchType-Settings.url"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Open-Settings.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Run-Console-Debug.bat"; DestDir: "{app}"; Flags: ignoreversion
 ; Placeholders so folders exist even if empty at build time
 Source: "..\dist\license\*"; DestDir: "{app}\license"; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs createallsubdirs
 Source: "..\dist\logs\*"; DestDir: "{app}\logs"; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs createallsubdirs
@@ -80,6 +84,7 @@ Source: "..\dist\logs\*"; DestDir: "{app}\logs"; Flags: ignoreversion skipifsour
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; Comment: "Run PunchType in the background"
 Name: "{group}\{#MyAppName} Settings"; Filename: "{app}\PunchType-Settings.url"; Comment: "Open local settings page"
+Name: "{group}\{#MyAppName} (Console Debug)"; Filename: "{app}\{#MyAppExeName}"; Comment: "Run with console window to see startup errors"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName} Settings"; Filename: "{app}\PunchType-Settings.url"; Tasks: desktopicon
 

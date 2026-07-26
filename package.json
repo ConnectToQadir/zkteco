@@ -36,11 +36,16 @@
     "pkg": "^5.8.1"
   },
   "pkg": {
+    "scripts": [
+      "obfuscated/out/src/**/*.js",
+      "src/**/*.js"
+    ],
     "assets": [
       "public/**/*",
       "src/keys/public.pem",
       "obfuscated/out/public/**/*",
-      "obfuscated/out/src/keys/public.pem"
+      "obfuscated/out/src/keys/public.pem",
+      "node_modules/koffi/**/*"
     ],
     "outputPath": "dist"
   }

@@ -2,9 +2,11 @@
 
 /**
  * Production build helper (Windows recommended):
- * 1) prepare obfuscated tree
+ * 1) stage sources (plain by default — reliable with pkg)
  * 2) pkg → dist/PunchType.exe
  * 3) copy runtime folders required by the installer
+ *
+ * Set PUNCHTYPE_OBFUSCATE=1 to enable obfuscation (may break pkg requires).
  */
 
 const fs = require('fs');
@@ -13,6 +15,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
+const OUT = path.join(ROOT, 'obfuscated', 'out');
 
 function copyRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
@@ -29,6 +32,14 @@ function writePlaceholder(dir, note) {
   fs.writeFileSync(path.join(dir, '.keep'), `${note}\n`, 'utf8');
 }
 
+function stagePlainSources() {
+  fs.rmSync(OUT, { recursive: true, force: true });
+  fs.mkdirSync(OUT, { recursive: true });
+  copyRecursive(path.join(ROOT, 'src'), path.join(OUT, 'src'));
+  copyRecursive(path.join(ROOT, 'public'), path.join(OUT, 'public'));
+  fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(OUT, 'package.json'));
+}
+
 function main() {
   if (process.platform !== 'win32') {
     // eslint-disable-next-line no-console
@@ -37,14 +48,20 @@ function main() {
     );
   }
 
-  // eslint-disable-next-line no-console
-  console.log('1/3 Preparing obfuscated sources...');
-  execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'prepare-obfuscation.js')], {
-    cwd: ROOT,
-    stdio: 'inherit',
-  });
+  const obfuscate = process.env.PUNCHTYPE_OBFUSCATE === '1';
+  if (obfuscate) {
+    // eslint-disable-next-line no-console
+    console.log('1/3 Preparing obfuscated sources (PUNCHTYPE_OBFUSCATE=1)...');
+    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'prepare-obfuscation.js')], {
+      cwd: ROOT,
+      stdio: 'inherit',
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('1/3 Staging plain sources for reliable pkg build...');
+    stagePlainSources();
+  }
 
-  const outDir = path.join(ROOT, 'obfuscated', 'out');
   fs.mkdirSync(DIST, { recursive: true });
 
   const pkgBinName = process.platform === 'win32' ? 'pkg.cmd' : 'pkg';
@@ -54,44 +71,29 @@ function main() {
   // eslint-disable-next-line no-console
   console.log('2/3 Building PunchType.exe (node18-win-x64)...');
 
+  const pkgArgs = [
+    path.join(OUT, 'src', 'index.js'),
+    '--targets',
+    'node18-win-x64',
+    '--output',
+    path.join(DIST, 'PunchType.exe'),
+    '--config',
+    path.join(ROOT, 'package.json'),
+  ];
+
   let result;
   if (fs.existsSync(pkgBin)) {
-    result = spawnSync(
-      pkgBin,
-      [
-        path.join(outDir, 'src', 'index.js'),
-        '--targets',
-        'node18-win-x64',
-        '--output',
-        path.join(DIST, 'PunchType.exe'),
-        '--config',
-        path.join(ROOT, 'package.json'),
-      ],
-      {
-        cwd: ROOT,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      },
-    );
+    result = spawnSync(pkgBin, pkgArgs, {
+      cwd: ROOT,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
   } else if (fs.existsSync(pkgCliJs)) {
-    result = spawnSync(
-      process.execPath,
-      [
-        pkgCliJs,
-        path.join(outDir, 'src', 'index.js'),
-        '--targets',
-        'node18-win-x64',
-        '--output',
-        path.join(DIST, 'PunchType.exe'),
-        '--config',
-        path.join(ROOT, 'package.json'),
-      ],
-      {
-        cwd: ROOT,
-        stdio: 'inherit',
-        shell: false,
-      },
-    );
+    result = spawnSync(process.execPath, [pkgCliJs, ...pkgArgs], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      shell: false,
+    });
   } else {
     // eslint-disable-next-line no-console
     console.error('pkg is not installed. Run: npm install');
@@ -119,6 +121,16 @@ function main() {
   writePlaceholder(path.join(DIST, 'license'), 'Runtime license uploads are stored here.');
   writePlaceholder(path.join(DIST, 'logs'), 'Runtime log files are stored here.');
 
+  // Help pkg/native module resolution: ship koffi binaries beside the exe when present.
+  const koffiDir = path.join(ROOT, 'node_modules', 'koffi');
+  if (fs.existsSync(koffiDir)) {
+    try {
+      copyRecursive(koffiDir, path.join(DIST, 'node_modules', 'koffi'));
+    } catch (_error) {
+      // optional
+    }
+  }
+
   fs.writeFileSync(
     path.join(DIST, 'BUILD_OK.txt'),
     [
@@ -129,6 +141,9 @@ function main() {
       '',
       'Website upload file will be:',
       '  release\\PunchType-Setup-1.0.0.exe',
+      '',
+      'Debug tip:',
+      '  Run PunchType.exe WITHOUT --background to see console errors.',
       '',
     ].join('\n'),
     'utf8',
