@@ -343,6 +343,21 @@
     }
   });
 
+  document.getElementById('simulatePunchBtn').addEventListener('click', async () => {
+    setMessage(configMessage, '');
+    try {
+      const data = await api('/simulate-punch', {
+        method: 'POST',
+        body: { employeeId: '105' },
+      });
+      setMessage(configMessage, data.message, data.success ? 'ok' : 'error');
+      const logs = await api('/logs');
+      logsView.textContent = (logs.lines || []).join('\n');
+    } catch (error) {
+      setMessage(configMessage, error.message, 'error');
+    }
+  });
+
   document.getElementById('restartBtn').addEventListener('click', async () => {
     setMessage(configMessage, '');
     try {

@@ -83,13 +83,18 @@ class AttendanceOrchestrator {
         return;
       }
 
-      // Mark before typing to collapse bursts that arrive while a type job is queued.
+      // Mark before typing to collapse bursts while a type job is queued.
       this._duplicateFilter.markTyped(punch.employeeId);
 
-      await this._keyboardTypingService.typeEmployeeId(punch.employeeId, {
-        delayMs: config.typingDelay,
-        pressEnter: config.pressEnter,
-      });
+      try {
+        await this._keyboardTypingService.typeEmployeeId(punch.employeeId, {
+          delayMs: config.typingDelay,
+          pressEnter: config.pressEnter,
+        });
+      } catch (typeError) {
+        this._duplicateFilter.unmark(punch.employeeId);
+        throw typeError;
+      }
     } catch (error) {
       this._errors += 1;
       await this._logger.error('Failed to handle attendance punch', {
@@ -113,17 +118,32 @@ class AttendanceOrchestrator {
       };
     }
 
+    const typingStatus = this._keyboardTypingService.getStatus();
+    const isStub = typingStatus.mode !== 'sendinput';
+
+    if (isStub && process.platform === 'win32') {
+      return {
+        success: false,
+        message:
+          'Keyboard injection is not available (stub mode). Rebuild/reinstall PunchType so the Win32 typer (koffi) loads correctly.',
+      };
+    }
+
     await this._keyboardTypingService.typeEmployeeId(String(employeeId || '').trim(), {
       delayMs: config.typingDelay,
       pressEnter: config.pressEnter,
     });
 
+    if (isStub) {
+      return {
+        success: true,
+        message: `Stub-typed "${employeeId}" (macOS/dev). Real key injection only runs on Windows. Check logs for "Employee typed".`,
+      };
+    }
+
     return {
       success: true,
-      message:
-        process.platform === 'win32'
-          ? `Typed "${employeeId}" into the focused window.`
-          : `Stub-typed "${employeeId}" (real key injection runs on Windows only).`,
+      message: `Typed "${employeeId}" into the focused window. Click the target field first, then run Test Typing.`,
     };
   }
 }

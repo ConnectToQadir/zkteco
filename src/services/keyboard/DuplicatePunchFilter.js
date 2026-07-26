@@ -57,6 +57,16 @@ class DuplicatePunchFilter {
     }
   }
 
+  /**
+   * @param {string} employeeId
+   */
+  unmark(employeeId) {
+    const id = String(employeeId || '').trim();
+    if (id) {
+      this._lastTypedAt.delete(id);
+    }
+  }
+
   clear() {
     this._lastTypedAt.clear();
   }

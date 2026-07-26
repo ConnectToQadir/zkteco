@@ -59,6 +59,44 @@ function createDeviceRouter(deps) {
     }
   });
 
+  /**
+   * Inject a fake punch (local/mac testing without ZK hardware).
+   * Body: { employeeId: "105" }
+   */
+  router.post('/simulate-punch', gate, async (req, res, next) => {
+    try {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const employeeId = body.employeeId || '105';
+      const punch = await deps.zktecoService.injectPunch({ employeeId });
+
+      // Give the orchestrator a moment to finish typing + logging.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const typing = deps.attendanceOrchestrator
+        ? deps.attendanceOrchestrator.getStatus().typing
+        : null;
+
+      res.json({
+        ok: true,
+        data: {
+          success: true,
+          message:
+            process.platform === 'win32'
+              ? `Simulated punch for "${punch.employeeId}". Check the focused window and logs.`
+              : `Simulated punch for "${punch.employeeId}". On macOS keys are stubbed — check logs for Attendance received / Employee typed.`,
+          punch: {
+            employeeId: punch.employeeId,
+            punchedAt: punch.punchedAt,
+            source: punch.source,
+          },
+          typing,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/restart', gate, async (req, res, next) => {
     try {
       await deps.zktecoService.restart();

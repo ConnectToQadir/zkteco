@@ -26,11 +26,14 @@ class KeyboardTypingService {
    * @returns {{ typedCount: number, lastTyped: object | null, platform: string }}
    */
   getStatus() {
+    const mode =
+      this._typer.mode ||
+      (process.platform === 'win32' && this._typer.platform === 'win32' ? 'sendinput' : 'stub');
     return {
       typedCount: this._typedCount,
       lastTyped: this._lastTyped,
       platform: this._typer.platform || process.platform,
-      mode: process.platform === 'win32' ? 'sendinput' : 'stub',
+      mode,
     };
   }
 

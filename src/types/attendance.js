@@ -39,14 +39,9 @@ function normalizePunch(raw, deviceIp, source) {
   }
 
   const record = /** @type {Record<string, unknown>} */ (raw);
-  const employeeId = String(
-    record.deviceUserId ??
-      record.userId ??
-      record.uid ??
-      record.user_id ??
-      record.id ??
-      '',
-  ).trim();
+
+  // Prefer badge / PIN fields. `uid` is often an internal index, so keep it last.
+  const employeeId = pickEmployeeId(record);
 
   if (!employeeId) {
     return null;
@@ -63,6 +58,7 @@ function normalizePunch(raw, deviceIp, source) {
     record.timestamp ??
     record.time ??
     record.dateTime ??
+    record.DateTime ??
     null;
 
   let punchedAt = new Date();
@@ -82,6 +78,37 @@ function normalizePunch(raw, deviceIp, source) {
     source,
     raw,
   };
+}
+
+/**
+ * @param {Record<string, unknown>} record
+ * @returns {string}
+ */
+function pickEmployeeId(record) {
+  const candidates = [
+    record.deviceUserId,
+    record.userId,
+    record.userid,
+    record.user_id,
+    record.pin,
+    record.PIN,
+    record.badge,
+    record.employeeId,
+    record.employee_id,
+    record.id,
+    record.uid,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null || candidate === '') {
+      continue;
+    }
+    const value = String(candidate).trim();
+    if (value) {
+      return value;
+    }
+  }
+  return '';
 }
 
 module.exports = {

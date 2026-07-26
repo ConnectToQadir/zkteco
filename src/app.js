@@ -32,6 +32,19 @@ async function createApp() {
   const configService = new ConfigService();
   const initialConfig = await configService.load();
 
+  if (process.env.PUNCHTYPE_HTTP_PORT) {
+    const overridePort = Number(process.env.PUNCHTYPE_HTTP_PORT);
+    if (Number.isInteger(overridePort) && overridePort > 0 && overridePort <= 65535) {
+      initialConfig.httpPort = overridePort;
+    }
+  }
+
+  if (process.env.PUNCHTYPE_MOCK_DEVICE === '1' || process.env.PUNCHTYPE_MOCK_DEVICE === 'true') {
+    if (!initialConfig.deviceIp) {
+      initialConfig.deviceIp = 'mock';
+    }
+  }
+
   const logger = new LoggerService({
     enabled: initialConfig.logging,
     mirrorToConsole: !isBackgroundRequested(),
@@ -148,7 +161,7 @@ async function startApp() {
   await context.logger.info('Application started', {
     httpPort: context.httpPort,
     version: context.version,
-    typingMode: process.platform === 'win32' ? 'sendinput' : 'stub',
+    typingMode: context.attendanceOrchestrator.getStatus().typing.mode,
     autoStart: config.autoStart,
     logging: config.logging,
   });

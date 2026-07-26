@@ -17,6 +17,7 @@ const VK_RETURN = 0x0d;
 class Win32SendInputTyper {
   constructor() {
     this.platform = 'win32';
+    this.mode = 'sendinput';
     this._ready = false;
     this._SendInput = null;
     this._INPUT = null;

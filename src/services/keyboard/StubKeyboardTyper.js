@@ -12,6 +12,7 @@ const ALLOWED_ID = /^[A-Za-z0-9_-]+$/;
 class StubKeyboardTyper {
   constructor() {
     this.platform = process.platform;
+    this.mode = 'stub';
     /** @type {string[]} */
     this.history = [];
   }

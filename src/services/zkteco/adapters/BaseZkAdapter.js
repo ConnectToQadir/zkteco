@@ -109,9 +109,18 @@ class BaseZkAdapter {
    */
   async _processAttendanceRows(rows, onPunch) {
     const keys = [];
+    let ignored = 0;
     for (const row of rows) {
       const punch = normalizePunch(row, this.endpoint.ip, `${this.name}-poll`);
       if (!punch) {
+        ignored += 1;
+        if (typeof this.onUnparsedPunch === 'function') {
+          try {
+            this.onUnparsedPunch(row);
+          } catch (_error) {
+            // ignore
+          }
+        }
         continue;
       }
       const key = `${punch.employeeId}|${punch.punchedAt.toISOString()}`;
@@ -128,6 +137,14 @@ class BaseZkAdapter {
 
     if (!this._seeded) {
       this._seeded = true;
+      this._seedMeta = { total: rows.length, ignored, tracked: this._seenKeys.size };
+      if (typeof this.onPollSeeded === 'function') {
+        try {
+          this.onPollSeeded(this._seedMeta);
+        } catch (_error) {
+          // ignore
+        }
+      }
     }
 
     // Bound memory: keep last ~5000 keys
@@ -145,6 +162,14 @@ class BaseZkAdapter {
     const punch = normalizePunch(raw, this.endpoint.ip, this.name);
     if (punch) {
       onPunch(punch);
+      return;
+    }
+    if (typeof this.onUnparsedPunch === 'function') {
+      try {
+        this.onUnparsedPunch(raw);
+      } catch (_error) {
+        // ignore logging failures
+      }
     }
   }
 }

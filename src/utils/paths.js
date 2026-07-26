@@ -32,6 +32,9 @@ function getInstallRoot() {
  * @returns {string}
  */
 function getDataRoot() {
+  if (process.env.PUNCHTYPE_DATA_DIR) {
+    return path.resolve(process.env.PUNCHTYPE_DATA_DIR);
+  }
   if (isPackaged() && process.platform === 'win32') {
     const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
     return path.join(base, 'PunchType');

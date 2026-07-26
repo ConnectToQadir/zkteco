@@ -61,7 +61,7 @@
           <div class="grid">
             <label>
               Device IP
-              <input id="deviceIp" name="deviceIp" type="text" placeholder="192.168.1.201" />
+              <input id="deviceIp" name="deviceIp" type="text" placeholder="192.168.1.201 or mock" />
             </label>
             <label>
               Device Port
@@ -112,8 +112,13 @@
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <button type="button" id="testDeviceBtn" class="btn">Test Device Connection</button>
             <button type="button" id="testTypingBtn" class="btn">Test Typing (105)</button>
+            <button type="button" id="simulatePunchBtn" class="btn">Simulate Punch (105)</button>
             <button type="button" id="restartBtn" class="btn">Restart Service</button>
           </div>
+          <p class="hint">
+            On Mac, set Device IP to <code>mock</code> (or run <code>npm run mac</code>) and use Simulate Punch.
+            Real keyboard injection only works on Windows.
+          </p>
           <p id="configMessage" class="message" role="status"></p>
         </form>
 

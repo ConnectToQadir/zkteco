@@ -5,6 +5,12 @@ const { sleep } = require('../../utils/sleep');
 const { AppError, getErrorMessage } = require('../../utils/errors');
 const { ZktecoJsAdapter } = require('./adapters/ZktecoJsAdapter');
 const { NodeZkLibAdapter } = require('./adapters/NodeZkLibAdapter');
+const {
+  MockZkAdapter,
+  isMockDeviceIp,
+  isMockDeviceEnabled,
+} = require('./adapters/MockZkAdapter');
+const { normalizePunch } = require('../../types/attendance');
 
 /**
  * Manages a single ZKTeco device connection with forever-retry reconnect.
@@ -123,8 +129,17 @@ class ZktecoService extends EventEmitter {
       udpInPort: 5200,
     };
 
-    if (!endpoint.ip) {
+    if (!endpoint.ip && !isMockDeviceEnabled()) {
       throw new AppError('Device IP is not configured.', 400, 'DEVICE_IP_REQUIRED');
+    }
+
+    if (isMockDeviceEnabled() || isMockDeviceIp(endpoint.ip)) {
+      return {
+        ok: true,
+        message: 'Mock device is available (local development). Use Simulate Punch to inject attendance.',
+        adapter: 'mock',
+        info: { mock: true },
+      };
     }
 
     const adapters = [
@@ -171,7 +186,9 @@ class ZktecoService extends EventEmitter {
   async _runLoop() {
     while (this._running) {
       const config = await this._configService.load();
-      if (!config.deviceIp) {
+      const useMock = isMockDeviceEnabled() || isMockDeviceIp(config.deviceIp);
+
+      if (!config.deviceIp && !useMock) {
         this._connected = false;
         this._mode = 'idle';
         this._lastError = 'Device IP is not configured.';
@@ -181,7 +198,7 @@ class ZktecoService extends EventEmitter {
       }
 
       const endpoint = {
-        ip: config.deviceIp,
+        ip: useMock ? config.deviceIp || 'mock' : config.deviceIp,
         port: config.devicePort,
         password: config.devicePassword,
         timeoutMs: 5000,
@@ -219,10 +236,13 @@ class ZktecoService extends EventEmitter {
    * @param {import('../../types/attendance').DeviceEndpoint} endpoint
    */
   async _connectAndListen(endpoint) {
-    const candidates = [
-      { create: () => new ZktecoJsAdapter(endpoint) },
-      { create: () => new NodeZkLibAdapter(endpoint) },
-    ];
+    const useMock = isMockDeviceEnabled() || isMockDeviceIp(endpoint.ip);
+    const candidates = useMock
+      ? [{ create: () => new MockZkAdapter(endpoint) }]
+      : [
+          { create: () => new ZktecoJsAdapter(endpoint) },
+          { create: () => new NodeZkLibAdapter(endpoint) },
+        ];
 
     let lastError = null;
 
@@ -249,44 +269,35 @@ class ZktecoService extends EventEmitter {
         this._startHealthMonitor(adapter);
 
         const onPunch = (punch) => this._handlePunch(punch);
-
-        this._mode = 'realtime';
-        this.emit('state', this.getStatus());
-
-        const realtimePromise = adapter.listenRealtime(onPunch);
-        // Prevent unhandled rejection if we switch to polling after an early realtime failure.
-        realtimePromise.catch(() => {});
-
-        let realtimeFinishedEarly = false;
-        try {
-          realtimeFinishedEarly = await Promise.race([
-            realtimePromise.then(() => true),
-            sleep(1500).then(() => false),
-          ]);
-        } catch (_realtimeError) {
-          realtimeFinishedEarly = true;
-        }
-
-        if (!this._running) {
-          adapter.stopRealtime();
-          await this._safeDisconnect();
-          return;
-        }
-
-        if (realtimeFinishedEarly) {
-          if (!adapter.isConnected()) {
-            throw new Error('Realtime listener ended and socket closed.');
-          }
-          this._mode = 'polling';
-          this.emit('state', this.getStatus());
-          this._pollSignal = { stopped: false };
-          await adapter.listenByPolling(onPunch, {
-            intervalMs: 2000,
-            signal: this._pollSignal,
+        adapter.onUnparsedPunch = (raw) => {
+          void this._logger.info('Punch payload ignored', {
+            adapter: adapter.name,
+            raw: summarizePunchRaw(raw),
           });
-        } else {
-          await realtimePromise;
-        }
+        };
+        adapter.onPollSeeded = (meta) => {
+          void this._logger.info('Attendance poll seeded', {
+            adapter: adapter.name,
+            total: meta.total,
+            tracked: meta.tracked,
+            ignored: meta.ignored,
+          });
+        };
+
+        // Polling is the reliable path across ZK firmwares.
+        // Realtime often stays "connected" forever without ever delivering punches,
+        // and concurrent getInfo during realtime can also stall the event stream.
+        this._mode = 'polling';
+        this.emit('state', this.getStatus());
+        await this._logger.info('Device listening (polling)', {
+          adapter: adapter.name,
+          intervalMs: 1500,
+        });
+        this._pollSignal = { stopped: false };
+        await adapter.listenByPolling(onPunch, {
+          intervalMs: 1500,
+          signal: this._pollSignal,
+        });
 
         throw new Error('Device listener ended.');
       } catch (error) {
@@ -316,6 +327,41 @@ class ZktecoService extends EventEmitter {
     }
 
     throw lastError || new Error('All device adapters failed.');
+  }
+
+  /**
+   * Inject a fake punch (macOS / local testing without ZK hardware).
+   * Goes through the same path as a real device event.
+   * @param {{ employeeId: string, attTime?: string }} input
+   * @returns {Promise<import('../../types/attendance').AttendancePunch>}
+   */
+  async injectPunch(input) {
+    const employeeId = String((input && input.employeeId) || '').trim();
+    if (!employeeId) {
+      throw new AppError('Employee ID is required.', 400, 'EMPLOYEE_ID_REQUIRED');
+    }
+
+    const raw = {
+      userId: employeeId,
+      attTime: (input && input.attTime) || new Date().toISOString(),
+    };
+
+    // Prefer queuing into the mock adapter so polling/normalize are exercised.
+    if (this._adapter && this._adapter.name === 'mock' && typeof this._adapter.enqueuePunch === 'function') {
+      this._adapter.enqueuePunch(raw);
+      await sleep(600);
+      const recent = this._recentPunches[0];
+      if (recent && recent.employeeId === employeeId) {
+        return recent;
+      }
+    }
+
+    const punch = normalizePunch(raw, (this._adapter && this._adapter.endpoint.ip) || 'mock', 'simulate');
+    if (!punch) {
+      throw new AppError('Could not normalize simulated punch.', 400, 'PUNCH_NORMALIZE_FAILED');
+    }
+    this._handlePunch(punch);
+    return punch;
   }
 
   /**
@@ -393,3 +439,27 @@ class ZktecoService extends EventEmitter {
 module.exports = {
   ZktecoService,
 };
+
+/**
+ * @param {unknown} raw
+ * @returns {object | string}
+ */
+function summarizePunchRaw(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return String(raw);
+  }
+  const record = /** @type {Record<string, unknown>} */ (raw);
+  const keys = Object.keys(record).slice(0, 12);
+  const out = {};
+  for (const key of keys) {
+    const value = record[key];
+    if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      out[key] = value;
+    } else if (value instanceof Date) {
+      out[key] = value.toISOString();
+    } else {
+      out[key] = typeof value;
+    }
+  }
+  return out;
+}

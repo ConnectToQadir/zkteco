@@ -22,6 +22,38 @@ npm install
 npm start
 ```
 
+### Test on macOS (before rebuilding the Windows EXE)
+
+You can validate settings, license, punch pipeline, and logs on this Mac.  
+**Real key injection and real ZK TCP still need Windows.**
+
+```bash
+# 1) One-shot automated check (mock device + simulated punch + stub typing)
+npm run mac:smoke
+
+# 2) Interactive UI with mock device
+npm run mac
+# open http://127.0.0.1:47825
+# set Device IP to "mock" if needed → Save → Restart
+# issue a license for THIS Mac's Machine ID, upload it
+# click "Simulate Punch (105)" and watch logs for:
+#   Attendance received / Employee typed
+```
+
+```bash
+# Machine ID for a Mac-only license
+npm run machine-id
+npm run license:issue -- --customer "Mac Dev" --machine <id> --out license/mac-dev-license.dat
+```
+
+| What | Mac | Windows EXE |
+|------|-----|-------------|
+| Settings UI / PIN / config | Yes | Yes |
+| License upload / gate | Yes | Yes |
+| Punch → type pipeline / logs | Yes (mock + stub) | Yes |
+| Real ZK device | Only if LAN-reachable | Yes |
+| SendInput into focused app | No (stub) | Yes |
+
 ## License issuing (seller only)
 
 Private key lives in `tools/license-generator/keys/private.pem` — **never ship to customers**.

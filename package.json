@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "mac": "PUNCHTYPE_MOCK_DEVICE=1 node src/index.js",
+    "mac:dev": "PUNCHTYPE_MOCK_DEVICE=1 node --watch src/index.js",
+    "mac:smoke": "node scripts/mac-smoke.js",
+    "machine-id": "node scripts/print-machine-id.js",
     "start:background": "node src/index.js --background",
     "license:issue": "node tools/license-generator/issue.js",
     "obfuscate": "node scripts/prepare-obfuscation.js",

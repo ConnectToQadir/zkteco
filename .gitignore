@@ -5,6 +5,7 @@ logs/
 config.json
 config.enc
 license/license.dat
+license/mac-dev-license.dat
 .DS_Store
 dist/
 build/
@@ -14,5 +15,7 @@ release/
 .env
 .idea/
 .vscode/
+.mac-smoke-data/
+.mac-smoke-tmp/
 tools/license-generator/keys/private.pem
 *.tmp
