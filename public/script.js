@@ -120,6 +120,54 @@
     document.getElementById('logging').checked = Boolean(config.logging);
   }
 
+  function applyLicenseToUi(license) {
+    const machineId = license.machineId || '—';
+    document.getElementById('machineId').textContent = machineId;
+    document.getElementById('customerName').textContent = license.customerName || '—';
+    document.getElementById('licenseStatus').textContent = license.status || '—';
+    const issuedAt = document.getElementById('licenseIssuedAt');
+    if (issuedAt) {
+      issuedAt.textContent = license.issuedAt || '—';
+    }
+    const licenseMessage = document.getElementById('licenseMessage');
+    if (licenseMessage) {
+      licenseMessage.textContent = license.message || '';
+    }
+    const gateMachineId = document.getElementById('gateMachineId');
+    if (gateMachineId) {
+      gateMachineId.value = machineId;
+    }
+    const gateLicenseStatus = document.getElementById('gateLicenseStatus');
+    if (gateLicenseStatus) {
+      const label = license.valid
+        ? `License status: valid (${license.customerName || 'activated'})`
+        : `License status: ${license.status || 'missing'} — upload license.dat after payment to activate typing`;
+      gateLicenseStatus.textContent = label;
+    }
+  }
+
+  async function loadLicensePublic() {
+    const license = await api('/license?refresh=1');
+    applyLicenseToUi(license);
+    return license;
+  }
+
+  async function copyText(value) {
+    if (!value || value === '—' || value === 'Loading…') {
+      throw new Error('Machine ID is not ready yet.');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const temp = document.createElement('textarea');
+    temp.value = value;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    document.body.removeChild(temp);
+  }
+
   async function loadStatus() {
     const status = await api('/status');
     pinConfigured = Boolean(status.pinConfigured);
@@ -137,19 +185,40 @@
     }
 
     footerStatus.textContent = `${status.product} · uptime ${status.uptimeSeconds}s · port ${status.httpPort}`;
+
+    const startupHint = document.getElementById('startupHint');
+    if (startupHint && status.startup) {
+      if (!status.startup.supported) {
+        startupHint.textContent =
+          'Windows startup is managed on Windows PCs only (no-op on this OS).';
+      } else if (status.startup.enabled) {
+        startupHint.textContent = 'Windows startup: enabled (HKCU Run → PunchType).';
+      } else {
+        startupHint.textContent = 'Windows startup: disabled.';
+      }
+    }
+
+    if (status.license) {
+      applyLicenseToUi(status.license);
+    } else {
+      try {
+        await loadLicensePublic();
+      } catch (_error) {
+        // ignore; gate will show loading state
+      }
+    }
+
     return status;
   }
 
   async function loadProtectedData() {
     const [config, license, logs] = await Promise.all([
       api('/config'),
-      api('/license'),
+      api('/license?refresh=1'),
       api('/logs'),
     ]);
     fillConfig(config);
-    document.getElementById('machineId').textContent = license.machineId || '—';
-    document.getElementById('customerName').textContent = license.customerName || '—';
-    document.getElementById('licenseStatus').textContent = license.status || '—';
+    applyLicenseToUi(license);
     logsView.textContent = (logs.lines || []).join('\n');
   }
 
@@ -261,6 +330,19 @@
     }
   });
 
+  document.getElementById('testTypingBtn').addEventListener('click', async () => {
+    setMessage(configMessage, '');
+    try {
+      const data = await api('/test-typing', {
+        method: 'POST',
+        body: { employeeId: '105' },
+      });
+      setMessage(configMessage, data.message, data.success ? 'ok' : 'error');
+    } catch (error) {
+      setMessage(configMessage, error.message, 'error');
+    }
+  });
+
   document.getElementById('restartBtn').addEventListener('click', async () => {
     setMessage(configMessage, '');
     try {
@@ -279,6 +361,72 @@
       logsView.textContent = error.message;
     }
   });
+
+  const refreshLicenseBtn = document.getElementById('refreshLicenseBtn');
+  if (refreshLicenseBtn) {
+    refreshLicenseBtn.addEventListener('click', async () => {
+      const uploadMsg = document.getElementById('licenseUploadMessage');
+      try {
+        const license = await loadLicensePublic();
+        applyLicenseToUi(license);
+        if (uploadMsg) setMessage(uploadMsg, 'License status refreshed.', 'ok');
+      } catch (error) {
+        if (uploadMsg) setMessage(uploadMsg, error.message, 'error');
+      }
+    });
+  }
+
+  const copyMachineIdBtn = document.getElementById('copyMachineIdBtn');
+  if (copyMachineIdBtn) {
+    copyMachineIdBtn.addEventListener('click', async () => {
+      try {
+        const value = document.getElementById('gateMachineId').value;
+        await copyText(value);
+        setMessage(gateMessage, 'Machine ID copied.', 'ok');
+      } catch (error) {
+        setMessage(gateMessage, error.message, 'error');
+      }
+    });
+  }
+
+  const copyMachineIdSettingsBtn = document.getElementById('copyMachineIdSettingsBtn');
+  if (copyMachineIdSettingsBtn) {
+    copyMachineIdSettingsBtn.addEventListener('click', async () => {
+      const uploadMsg = document.getElementById('licenseUploadMessage');
+      try {
+        await copyText(document.getElementById('machineId').textContent);
+        if (uploadMsg) setMessage(uploadMsg, 'Machine ID copied.', 'ok');
+      } catch (error) {
+        if (uploadMsg) setMessage(uploadMsg, error.message, 'error');
+      }
+    });
+  }
+
+  const uploadLicenseBtn = document.getElementById('uploadLicenseBtn');
+  if (uploadLicenseBtn) {
+    uploadLicenseBtn.addEventListener('click', async () => {
+      const uploadMsg = document.getElementById('licenseUploadMessage');
+      const fileInput = document.getElementById('licenseFileInput');
+      setMessage(uploadMsg, '');
+
+      try {
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        if (!file) {
+          throw new Error('Choose a license.dat file first.');
+        }
+        const content = await file.text();
+        const data = await api('/license/upload', {
+          method: 'POST',
+          body: { content },
+        });
+        applyLicenseToUi(data);
+        if (fileInput) fileInput.value = '';
+        setMessage(uploadMsg, data.message || 'License activated.', data.valid ? 'ok' : 'error');
+      } catch (error) {
+        setMessage(uploadMsg, error.message, 'error');
+      }
+    });
+  }
 
   (async function init() {
     try {

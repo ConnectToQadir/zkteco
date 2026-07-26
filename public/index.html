@@ -24,6 +24,23 @@
       <section id="gatePanel" class="panel">
         <h2 id="gateTitle">Unlock settings</h2>
         <p id="gateHelp" class="help">Enter your local PIN to manage PunchType on this computer.</p>
+
+        <div class="license-callout">
+          <p class="help"><strong>Activate PunchType</strong></p>
+          <p class="hint">
+            Download the app from our website, then send us this Machine ID after payment.
+            We will email your license file — unlock settings and upload it to activate typing.
+          </p>
+          <label>
+            Machine ID
+            <div class="copy-row">
+              <input id="gateMachineId" type="text" readonly value="Loading…" />
+              <button type="button" id="copyMachineIdBtn" class="btn">Copy</button>
+            </div>
+          </label>
+          <p id="gateLicenseStatus" class="hint">License status: —</p>
+        </div>
+
         <form id="gateForm" class="form">
           <label>
             PIN
@@ -89,10 +106,12 @@
               Enable logging
             </label>
           </div>
+          <p id="startupHint" class="hint">Windows startup status loads with the page.</p>
 
           <div class="actions">
             <button type="submit" class="btn btn-primary">Save Configuration</button>
             <button type="button" id="testDeviceBtn" class="btn">Test Device Connection</button>
+            <button type="button" id="testTypingBtn" class="btn">Test Typing (105)</button>
             <button type="button" id="restartBtn" class="btn">Restart Service</button>
           </div>
           <p id="configMessage" class="message" role="status"></p>
@@ -104,8 +123,24 @@
             <div><dt>Machine ID</dt><dd id="machineId">—</dd></div>
             <div><dt>Customer Name</dt><dd id="customerName">—</dd></div>
             <div><dt>License Status</dt><dd id="licenseStatus">—</dd></div>
+            <div><dt>Issued At</dt><dd id="licenseIssuedAt">—</dd></div>
           </dl>
-          <p class="hint">Full license verification arrives in Phase 7.</p>
+          <p id="licenseMessage" class="hint">
+            After payment, send us your Machine ID. We will email license.dat — upload it below to activate.
+          </p>
+
+          <div class="upload-box">
+            <label>
+              Upload license file
+              <input id="licenseFileInput" type="file" accept=".dat,.json,application/json,text/plain" />
+            </label>
+            <div class="actions">
+              <button type="button" id="uploadLicenseBtn" class="btn btn-primary">Upload &amp; Activate</button>
+              <button type="button" id="refreshLicenseBtn" class="btn">Refresh License</button>
+              <button type="button" id="copyMachineIdSettingsBtn" class="btn">Copy Machine ID</button>
+            </div>
+            <p id="licenseUploadMessage" class="message" role="status"></p>
+          </div>
         </div>
 
         <div class="panel">

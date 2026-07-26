@@ -4,39 +4,37 @@ const express = require('express');
 const { requireUnlock } = require('../middleware/requireUnlock');
 
 /**
- * Remaining stub endpoints until later phases.
  * @param {{
  *   authSessions: import('../../services/auth/AuthSessionService').AuthSessionService,
- *   logger?: { getLines: () => string[] },
+ *   logger?: import('../../services/logger/LoggerService').LoggerService,
  * }} deps
  */
 function createStubRouter(deps) {
   const router = express.Router();
   const gate = requireUnlock(deps);
 
-  router.get('/license', async (req, res) => {
-    res.json({
-      ok: true,
-      data: {
-        machineId: 'Not available until Phase 7',
-        customerName: null,
-        status: 'unknown',
-        note: 'License service arrives in Phase 7',
-      },
-    });
-  });
+  router.get('/logs', gate, async (req, res, next) => {
+    try {
+      let lines = ['No log entries yet.'];
+      if (deps.logger) {
+        if (typeof deps.logger.readTodayLines === 'function') {
+          const fromDisk = await deps.logger.readTodayLines(200);
+          lines = fromDisk.length ? fromDisk : deps.logger.getLines();
+        } else {
+          lines = deps.logger.getLines();
+        }
+        if (!lines.length) {
+          lines = ['No log entries yet.'];
+        }
+      }
 
-  router.get('/logs', gate, async (req, res) => {
-    const lines = deps.logger && typeof deps.logger.getLines === 'function'
-      ? deps.logger.getLines()
-      : ['No logger available.'];
-
-    res.json({
-      ok: true,
-      data: {
-        lines: lines.length ? lines : ['No log entries yet.'],
-      },
-    });
+      res.json({
+        ok: true,
+        data: { lines },
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;

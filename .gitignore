@@ -9,7 +9,10 @@ license/license.dat
 dist/
 build/
 obfuscated/
+release/
 *.exe
 .env
 .idea/
 .vscode/
+tools/license-generator/keys/private.pem
+*.tmp

@@ -28,7 +28,14 @@ class ZktecoJsAdapter extends BaseZkAdapter {
       client.createSocket(),
       this.endpoint.timeoutMs + 2000,
       `Connection to ${this.endpoint.ip}:${this.endpoint.port} timed out (zkteco-js).`,
-    );
+    ).catch(async (error) => {
+      try {
+        await client.disconnect();
+      } catch (_disconnectError) {
+        // ignore
+      }
+      throw error;
+    });
 
     try {
       await withTimeout(client.enableDevice(), 3000, 'enableDevice timed out.');

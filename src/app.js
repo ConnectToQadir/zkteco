@@ -3,8 +3,19 @@
 const { ConfigService } = require('./services/config/ConfigService');
 const { AuthSessionService } = require('./services/auth/AuthSessionService');
 const { ZktecoService } = require('./services/zkteco/ZktecoService');
-const { MemoryLogger } = require('./services/logger/MemoryLogger');
+const { LoggerService } = require('./services/logger/LoggerService');
+const { createKeyboardTyper } = require('./services/keyboard/createKeyboardTyper');
+const { KeyboardTypingService } = require('./services/keyboard/KeyboardTypingService');
+const { DuplicatePunchFilter } = require('./services/keyboard/DuplicatePunchFilter');
+const { LicenseService } = require('./services/license/LicenseService');
+const { LicenseTypingGate } = require('./services/license/LicenseTypingGate');
+const { AttendanceOrchestrator } = require('./services/orchestrator/AttendanceOrchestrator');
+const { WindowsStartupService } = require('./services/startup/WindowsStartupService');
 const { createHttpServer, listenLoopback } = require('./http/server');
+const {
+  applyBackgroundMode,
+  isBackgroundRequested,
+} = require('./utils/windowsBackground');
 
 const PRODUCT_NAME = 'PunchType';
 const VERSION = '1.0.0';
@@ -14,16 +25,49 @@ const VERSION = '1.0.0';
  */
 async function createApp() {
   const startedAt = Date.now();
-  const configService = new ConfigService();
-  const authSessions = new AuthSessionService();
-  const logger = new MemoryLogger();
-  const zktecoService = new ZktecoService({ configService, logger });
+  const background = applyBackgroundMode();
 
-  const config = await configService.load();
+  const configService = new ConfigService();
+  const initialConfig = await configService.load();
+
+  const logger = new LoggerService({
+    enabled: initialConfig.logging,
+    mirrorToConsole: !isBackgroundRequested(),
+  });
+
+  if (background.active) {
+    await logger.info('Background mode active', { reason: background.reason });
+  }
+
+  const authSessions = new AuthSessionService();
+  const licenseService = new LicenseService({
+    logger,
+    productVersion: VERSION,
+  });
+  const licenseGate = new LicenseTypingGate({ licenseService });
+  const zktecoService = new ZktecoService({ configService, logger });
+  const keyboardTypingService = new KeyboardTypingService({
+    typer: createKeyboardTyper(),
+    logger,
+  });
+  const duplicateFilter = new DuplicatePunchFilter();
+  const attendanceOrchestrator = new AttendanceOrchestrator({
+    configService,
+    zktecoService,
+    keyboardTypingService,
+    duplicateFilter,
+    licenseGate,
+    logger,
+  });
+  const windowsStartupService = new WindowsStartupService({ logger });
+
   const app = createHttpServer({
     configService,
     authSessions,
     zktecoService,
+    attendanceOrchestrator,
+    windowsStartupService,
+    licenseService,
     logger,
     productName: PRODUCT_NAME,
     version: VERSION,
@@ -35,33 +79,76 @@ async function createApp() {
     configService,
     authSessions,
     zktecoService,
+    attendanceOrchestrator,
+    windowsStartupService,
+    licenseService,
     logger,
-    httpPort: config.httpPort,
+    httpPort: initialConfig.httpPort,
     productName: PRODUCT_NAME,
     version: VERSION,
   };
 }
 
 /**
- * @returns {Promise<{
- *   server: import('http').Server,
- *   httpPort: number,
- *   productName: string,
- *   zktecoService: import('./services/zkteco/ZktecoService').ZktecoService,
- * }>}
+ * @returns {Promise<object>}
  */
 async function startApp() {
   const context = await createApp();
   const server = await listenLoopback(context.app, context.httpPort);
 
-  // Start device loop in background; never crash the HTTP server if device is offline.
+  context.attendanceOrchestrator.start();
+
+  const config = await context.configService.load();
+  try {
+    await context.windowsStartupService.syncFromConfig(config.autoStart);
+  } catch (error) {
+    await context.logger.error('Failed to sync Windows startup', {
+      error: error.message,
+    });
+  }
+
+  try {
+    const license = await context.licenseService.getInfo({ force: true });
+    await context.logger.info('License validation', {
+      status: license.status,
+      machineId: license.machineId,
+    });
+  } catch (error) {
+    await context.logger.error('License validation failed at startup', {
+      error: error.message,
+    });
+  }
+
   context.zktecoService.start().catch(async (error) => {
     await context.logger.error('Device service failed to start', { error: error.message });
+  });
+
+  const shutdown = async (signal) => {
+    await context.logger.info('Application closed', { signal });
+    try {
+      await context.zktecoService.stop();
+    } catch (_error) {
+      // ignore
+    }
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM');
   });
 
   await context.logger.info('Application started', {
     httpPort: context.httpPort,
     version: context.version,
+    typingMode: process.platform === 'win32' ? 'sendinput' : 'stub',
+    autoStart: config.autoStart,
+    logging: config.logging,
   });
 
   return {
@@ -70,6 +157,10 @@ async function startApp() {
     productName: context.productName,
     version: context.version,
     zktecoService: context.zktecoService,
+    attendanceOrchestrator: context.attendanceOrchestrator,
+    windowsStartupService: context.windowsStartupService,
+    licenseService: context.licenseService,
+    logger: context.logger,
   };
 }
 

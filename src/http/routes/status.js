@@ -6,6 +6,9 @@ const express = require('express');
  * @param {{
  *   configService: import('../../services/config/ConfigService').ConfigService,
  *   zktecoService: import('../../services/zkteco/ZktecoService').ZktecoService,
+ *   attendanceOrchestrator?: import('../../services/orchestrator/AttendanceOrchestrator').AttendanceOrchestrator,
+ *   windowsStartupService?: import('../../services/startup/WindowsStartupService').WindowsStartupService,
+ *   licenseService?: import('../../services/license/LicenseService').LicenseService,
  *   startedAt: number,
  *   productName: string,
  *   version: string,
@@ -18,6 +21,12 @@ function createStatusRouter(deps) {
     try {
       const config = await deps.configService.getPublic();
       const device = deps.zktecoService.getStatus();
+      const typing = deps.attendanceOrchestrator
+        ? deps.attendanceOrchestrator.getStatus()
+        : null;
+      const startup = deps.windowsStartupService
+        ? await deps.windowsStartupService.getStatus()
+        : { supported: false, enabled: false };
 
       res.json({
         ok: true,
@@ -43,10 +52,14 @@ function createStatusRouter(deps) {
               source: punch.source,
             })),
           },
-          license: {
-            status: 'not_checked',
-            note: 'License service arrives in Phase 7',
-          },
+          typing,
+          startup,
+          license: deps.licenseService
+            ? await deps.licenseService.getInfo()
+            : {
+                status: 'unknown',
+                note: 'License service unavailable',
+              },
         },
       });
     } catch (error) {

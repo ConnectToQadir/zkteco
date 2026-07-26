@@ -8,25 +8,18 @@ const { createStatusRouter } = require('./routes/status');
 const { createAuthRouter } = require('./routes/auth');
 const { createConfigRouter } = require('./routes/config');
 const { createDeviceRouter } = require('./routes/device');
+const { createLicenseRouter } = require('./routes/license');
 const { createStubRouter } = require('./routes/stubs');
 
 /**
- * @param {{
- *   configService: import('../services/config/ConfigService').ConfigService,
- *   authSessions: import('../services/auth/AuthSessionService').AuthSessionService,
- *   zktecoService: import('../services/zkteco/ZktecoService').ZktecoService,
- *   logger: import('../services/logger/MemoryLogger').MemoryLogger,
- *   productName: string,
- *   version: string,
- *   startedAt: number,
- * }} deps
+ * @param {object} deps
  */
 function createHttpServer(deps) {
   const app = express();
 
   app.disable('x-powered-by');
   app.use(localOnly);
-  app.use(express.json({ limit: '32kb' }));
+  app.use(express.json({ limit: '128kb' }));
 
   app.use(express.static(getPublicDir()));
 
@@ -35,6 +28,7 @@ function createHttpServer(deps) {
   api.use(createAuthRouter(deps));
   api.use(createConfigRouter(deps));
   api.use(createDeviceRouter(deps));
+  api.use(createLicenseRouter(deps));
   api.use(createStubRouter(deps));
   app.use('/api', api);
 

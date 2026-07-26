@@ -8,6 +8,8 @@ const { requireUnlock } = require('../middleware/requireUnlock');
  *   configService: import('../../services/config/ConfigService').ConfigService,
  *   authSessions: import('../../services/auth/AuthSessionService').AuthSessionService,
  *   zktecoService?: import('../../services/zkteco/ZktecoService').ZktecoService,
+ *   windowsStartupService?: import('../../services/startup/WindowsStartupService').WindowsStartupService,
+ *   logger?: import('../../services/logger/LoggerService').LoggerService,
  * }} deps
  */
 function createConfigRouter(deps) {
@@ -45,6 +47,19 @@ function createConfigRouter(deps) {
       const saved = await deps.configService.save(patch);
       const publicConfig = await deps.configService.getPublic();
 
+      if (deps.logger && previous.logging !== saved.logging) {
+        deps.logger.setEnabled(saved.logging);
+        await deps.logger.info('Configuration changes', {
+          logging: saved.logging,
+        });
+      } else if (deps.logger) {
+        await deps.logger.info('Configuration changes', {
+          deviceIp: saved.deviceIp,
+          httpPort: saved.httpPort,
+          autoStart: saved.autoStart,
+        });
+      }
+
       const deviceChanged =
         previous.deviceIp !== saved.deviceIp ||
         previous.devicePort !== saved.devicePort ||
@@ -54,11 +69,23 @@ function createConfigRouter(deps) {
         await deps.zktecoService.restart();
       }
 
+      let startupSynced = false;
+      if (previous.autoStart !== saved.autoStart && deps.windowsStartupService) {
+        await deps.windowsStartupService.syncFromConfig(saved.autoStart);
+        startupSynced = true;
+      }
+
       let message = 'Configuration saved.';
       if (previous.httpPort !== saved.httpPort) {
         message = 'Configuration saved. Restart PunchType to apply the new HTTP port.';
+      } else if (deviceChanged && startupSynced) {
+        message = 'Configuration saved. Device service restarted and Windows startup updated.';
       } else if (deviceChanged) {
         message = 'Configuration saved. Device service restarted.';
+      } else if (startupSynced) {
+        message = saved.autoStart
+          ? 'Configuration saved. PunchType will start with Windows.'
+          : 'Configuration saved. PunchType removed from Windows startup.';
       }
 
       res.json({
@@ -67,6 +94,7 @@ function createConfigRouter(deps) {
           config: publicConfig,
           httpPortChanged: previous.httpPort !== saved.httpPort,
           deviceRestarted: deviceChanged,
+          startupSynced,
           message,
         },
       });

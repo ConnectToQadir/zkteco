@@ -5,7 +5,12 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "start:background": "node src/index.js --background",
+    "license:issue": "node tools/license-generator/issue.js",
+    "obfuscate": "node scripts/prepare-obfuscation.js",
+    "build": "node scripts/build.js",
+    "build:installer": "node scripts/build-installer.js"
   },
   "engines": {
     "node": ">=20"
@@ -21,7 +26,22 @@
   "private": true,
   "dependencies": {
     "express": "^5.1.0",
+    "javascript-obfuscator": "^4.2.2",
+    "koffi": "^2.16.3",
     "node-zklib": "^1.3.0",
+    "systeminformation": "^5.33.1",
     "zkteco-js": "^1.7.2"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "src/keys/public.pem",
+      "obfuscated/out/public/**/*",
+      "obfuscated/out/src/keys/public.pem"
+    ],
+    "outputPath": "dist"
   }
 }
