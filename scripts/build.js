@@ -118,8 +118,36 @@ function main() {
     path.join(ROOT, 'src', 'keys', 'public.pem'),
     path.join(DIST, 'keys', 'public.pem'),
   );
+  fs.copyFileSync(
+    path.join(ROOT, 'installer', 'PunchType-RunHidden.vbs'),
+    path.join(DIST, 'PunchType-RunHidden.vbs'),
+  );
   writePlaceholder(path.join(DIST, 'license'), 'Runtime license uploads are stored here.');
   writePlaceholder(path.join(DIST, 'logs'), 'Runtime log files are stored here.');
+
+  const exePath = path.join(DIST, 'PunchType.exe');
+  if (process.platform === 'win32' && fs.existsSync(exePath)) {
+    try {
+      const where = spawnSync('where', ['editbin'], { shell: true, encoding: 'utf8' });
+      const editbin =
+        where.status === 0 && where.stdout
+          ? where.stdout.trim().split(/\r?\n/)[0].trim()
+          : '';
+      if (editbin) {
+        execFileSync(editbin, ['/SUBSYSTEM:WINDOWS', exePath]);
+        // eslint-disable-next-line no-console
+        console.log('Set PunchType.exe subsystem to Windows (no console window).');
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[PunchType] Could not set Windows subsystem on exe:',
+        error.message || error,
+      );
+      // eslint-disable-next-line no-console
+      console.warn('[PunchType] PunchType-RunHidden.vbs still launches without a CMD window.');
+    }
+  }
 
   // Help pkg/native module resolution: ship koffi binaries beside the exe when present.
   const koffiDir = path.join(ROOT, 'node_modules', 'koffi');

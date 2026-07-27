@@ -77,27 +77,28 @@ Source: "..\dist\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreve
 Source: "PunchType-Settings.url"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Open-Settings.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Run-Console-Debug.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "PunchType-RunHidden.vbs"; DestDir: "{app}"; Flags: ignoreversion
 ; Placeholders so folders exist even if empty at build time
 Source: "..\dist\license\*"; DestDir: "{app}\license"; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs createallsubdirs
 Source: "..\dist\logs\*"; DestDir: "{app}\logs"; Flags: ignoreversion skipifsourcedoesntexist recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; Comment: "Run PunchType in the background"
+Name: "{group}\{#MyAppName}"; Filename: "wscript.exe"; Parameters: """{app}\PunchType-RunHidden.vbs"""; Comment: "Run PunchType in the background"
 Name: "{group}\{#MyAppName} Settings"; Filename: "{app}\PunchType-Settings.url"; Comment: "Open local settings page"
 Name: "{group}\{#MyAppName} (Console Debug)"; Filename: "{app}\{#MyAppExeName}"; Comment: "Run with console window to see startup errors"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName} Settings"; Filename: "{app}\PunchType-Settings.url"; Tasks: desktopicon
 
 [Registry]
-; Optional autostart (same as in-app Windows Startup setting)
+; Optional autostart — VBS launcher starts exe hidden (no CMD window)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "PunchType"; \
-    ValueData: """{app}\{#MyAppExeName}"" --background"; \
+    ValueData: "wscript.exe ""{app}\PunchType-RunHidden.vbs"""; \
     Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; \
-    Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
+Filename: "wscript.exe"; Parameters: """{app}\PunchType-RunHidden.vbs"""; \
+    Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent runhidden
 Filename: "{app}\PunchType-Settings.url"; \
     Description: "Open {#MyAppName} Settings"; Flags: nowait postinstall skipifsilent shellexec
 

@@ -1,5 +1,16 @@
 'use strict';
 
+const { applyBackgroundMode, isBackgroundRequested } = require('./utils/windowsBackground');
+const { ensureSingleInstance } = require('./utils/windowsSingleInstance');
+
+if (isBackgroundRequested()) {
+  applyBackgroundMode();
+}
+
+if (!ensureSingleInstance()) {
+  process.exit(0);
+}
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -54,7 +65,6 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const { startApp } = require('./app');
-const { isBackgroundRequested } = require('./utils/windowsBackground');
 
 /** Keep process-level references so the HTTP server is never GC'd. */
 let runtime = null;

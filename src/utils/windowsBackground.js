@@ -24,11 +24,21 @@ function applyBackgroundMode(options = {}) {
   try {
     const koffi = require('koffi');
     const kernel32 = koffi.load('kernel32.dll');
+    const user32 = koffi.load('user32.dll');
+
+    const GetConsoleWindow = kernel32.func('uintptr __stdcall GetConsoleWindow()');
     const FreeConsole = kernel32.func('bool __stdcall FreeConsole()');
+    const ShowWindow = user32.func('bool __stdcall ShowWindow(uintptr hWnd, int nCmdShow)');
+
+    const hwnd = GetConsoleWindow();
+    if (hwnd) {
+      ShowWindow(hwnd, 0);
+    }
+
     const ok = FreeConsole();
     return {
       active: Boolean(ok),
-      reason: ok ? 'console_detached' : 'freeconsole_failed',
+      reason: ok ? 'console_detached' : hwnd ? 'console_hidden_only' : 'no_console_window',
     };
   } catch (error) {
     return {

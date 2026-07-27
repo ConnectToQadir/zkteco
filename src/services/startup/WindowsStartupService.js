@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const path = require('path');
@@ -9,6 +10,7 @@ const { AppError } = require('../../utils/errors');
 const execFileAsync = promisify(execFile);
 const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
 const VALUE_NAME = 'PunchType';
+const HIDDEN_LAUNCHER = 'PunchType-RunHidden.vbs';
 
 /**
  * Manages "Start with Windows" via HKCU Run key.
@@ -37,11 +39,16 @@ class WindowsStartupService {
   }
 
   /**
-   * Command used for autostart (always includes --background).
+   * Command used for autostart (hidden launcher — no console window).
    * @returns {string}
    */
   getLaunchCommand() {
     if (process.pkg || path.basename(process.execPath).toLowerCase().includes('punchtype')) {
+      const appDir = path.dirname(process.execPath);
+      const vbs = path.join(appDir, HIDDEN_LAUNCHER);
+      if (fs.existsSync(vbs)) {
+        return `wscript.exe "${vbs}"`;
+      }
       return `"${process.execPath}" --background`;
     }
 
