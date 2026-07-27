@@ -5,6 +5,8 @@
  * @property {string} deviceIp
  * @property {number} devicePort
  * @property {string} devicePassword
+ * @property {'pull' | 'push' | 'both'} connectionMode
+ * @property {number} admsPort
  * @property {number} httpPort
  * @property {number} typingDelay
  * @property {number} duplicateSeconds
@@ -21,6 +23,8 @@ function createDefaultConfig() {
     deviceIp: '',
     devicePort: 4370,
     devicePassword: '',
+    connectionMode: 'pull',
+    admsPort: 8088,
     httpPort: 47825,
     typingDelay: 100,
     duplicateSeconds: 5,
@@ -41,6 +45,8 @@ function toPublicConfig(config) {
     deviceIp: config.deviceIp,
     devicePort: config.devicePort,
     devicePasswordSet: Boolean(config.devicePassword),
+    connectionMode: config.connectionMode,
+    admsPort: config.admsPort,
     httpPort: config.httpPort,
     typingDelay: config.typingDelay,
     duplicateSeconds: config.duplicateSeconds,

@@ -15,22 +15,39 @@ function createStubRouter(deps) {
 
   router.get('/logs', gate, async (req, res, next) => {
     try {
-      let lines = ['No log entries yet.'];
+      let lines = [];
       if (deps.logger) {
         if (typeof deps.logger.readTodayLines === 'function') {
-          const fromDisk = await deps.logger.readTodayLines(200);
-          lines = fromDisk.length ? fromDisk : deps.logger.getLines();
-        } else {
-          lines = deps.logger.getLines();
+          lines = await deps.logger.readTodayLines(200);
         }
         if (!lines.length) {
-          lines = ['No log entries yet.'];
+          lines = deps.logger.getLines();
         }
+
+        const startupErrors =
+          typeof deps.logger.readStartupErrorLines === 'function'
+            ? await deps.logger.readStartupErrorLines(30)
+            : [];
+        if (startupErrors.length) {
+          lines = [
+            '--- startup-error.log ---',
+            ...startupErrors,
+            '--- application log ---',
+            ...lines,
+          ];
+        }
+      }
+
+      if (!lines.length) {
+        lines = ['No log entries yet.'];
       }
 
       res.json({
         ok: true,
-        data: { lines },
+        data: {
+          lines,
+          logsDir: deps.logger && deps.logger.getLogsDirPath ? deps.logger.getLogsDirPath() : null,
+        },
       });
     } catch (error) {
       next(error);

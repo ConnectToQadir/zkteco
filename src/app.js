@@ -12,6 +12,8 @@ const { LicenseTypingGate } = require('./services/license/LicenseTypingGate');
 const { AttendanceOrchestrator } = require('./services/orchestrator/AttendanceOrchestrator');
 const { WindowsStartupService } = require('./services/startup/WindowsStartupService');
 const { createHttpServer, listenLoopback } = require('./http/server');
+const { AdmsPushService } = require('./services/adms/AdmsPushService');
+const { AdmsListenerManager } = require('./services/adms/AdmsListenerManager');
 const {
   applyBackgroundMode,
   isBackgroundRequested,
@@ -61,6 +63,9 @@ async function createApp() {
   });
   const licenseGate = new LicenseTypingGate({ licenseService });
   const zktecoService = new ZktecoService({ configService, logger });
+  const admsPushService = new AdmsPushService({ configService, logger });
+  admsPushService.on('punch', (punch) => zktecoService.receivePushPunch(punch));
+  const admsListenerManager = new AdmsListenerManager({ admsPushService, logger });
   const keyboardTypingService = new KeyboardTypingService({
     typer: createKeyboardTyper(),
     logger,
@@ -80,6 +85,8 @@ async function createApp() {
     configService,
     authSessions,
     zktecoService,
+    admsPushService,
+    admsListenerManager,
     attendanceOrchestrator,
     windowsStartupService,
     licenseService,
@@ -94,11 +101,15 @@ async function createApp() {
     configService,
     authSessions,
     zktecoService,
+    admsPushService,
+    admsListenerManager,
     attendanceOrchestrator,
     windowsStartupService,
     licenseService,
     logger,
     httpPort: initialConfig.httpPort,
+    admsPort: initialConfig.admsPort,
+    connectionMode: initialConfig.connectionMode,
     productName: PRODUCT_NAME,
     version: VERSION,
   };
@@ -111,11 +122,16 @@ async function startApp() {
   const context = await createApp();
   const server = await listenLoopback(context.app, context.httpPort);
 
-  context.attendanceOrchestrator.start();
-
-  const config = await context.configService.load();
+  const startupConfig = await context.configService.load();
   try {
-    await context.windowsStartupService.syncFromConfig(config.autoStart);
+    await context.admsListenerManager.sync(startupConfig);
+  } catch (_error) {
+    // Logged inside manager; app can still run pull mode.
+  }
+
+  context.attendanceOrchestrator.start();
+  try {
+    await context.windowsStartupService.syncFromConfig(startupConfig.autoStart);
   } catch (error) {
     await context.logger.error('Failed to sync Windows startup', {
       error: error.message,
@@ -145,6 +161,11 @@ async function startApp() {
     } catch (_error) {
       // ignore
     }
+    try {
+      await context.admsListenerManager.stop();
+    } catch (_error) {
+      // ignore
+    }
     server.close(() => {
       process.exit(0);
     });
@@ -158,12 +179,16 @@ async function startApp() {
     void shutdown('SIGTERM');
   });
 
+  const admsEnabled =
+    startupConfig.connectionMode === 'push' || startupConfig.connectionMode === 'both';
   await context.logger.info('Application started', {
     httpPort: context.httpPort,
+    admsPort: admsEnabled ? startupConfig.admsPort : null,
+    connectionMode: startupConfig.connectionMode,
     version: context.version,
     typingMode: context.attendanceOrchestrator.getStatus().typing.mode,
-    autoStart: config.autoStart,
-    logging: config.logging,
+    autoStart: startupConfig.autoStart,
+    logging: startupConfig.logging,
   });
 
   return {

@@ -73,14 +73,29 @@ class BaseZkAdapter {
   async listenByPolling(onPunch, options = {}) {
     const intervalMs = options.intervalMs || 2000;
     const signal = options.signal || { stopped: false };
+    const maxConsecutiveErrors = options.maxConsecutiveErrors || 3;
+    let consecutiveErrors = 0;
 
     while (!signal.stopped && this._client) {
       try {
         const result = await this.getAttendances();
+        consecutiveErrors = 0;
         const rows = this._extractAttendanceRows(result);
         await this._processAttendanceRows(rows, onPunch);
       } catch (error) {
-        throw error;
+        consecutiveErrors += 1;
+        if (typeof options.onPollError === 'function') {
+          try {
+            options.onPollError(error, consecutiveErrors);
+          } catch (_callbackError) {
+            // ignore logging failures
+          }
+        }
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          throw error;
+        }
+        await sleep(intervalMs * consecutiveErrors);
+        continue;
       }
       await sleep(intervalMs);
     }

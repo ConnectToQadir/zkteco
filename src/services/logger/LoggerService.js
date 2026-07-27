@@ -97,11 +97,8 @@ class LoggerService {
    * @param {Record<string, unknown>} [meta]
    */
   async _write(level, event, meta) {
-    if (!this._enabled && level !== 'ERROR') {
-      // Always keep errors visible in memory even if logging disabled? Spec says Enable Logging toggle.
-      // When disabled: skip file + console, but still keep a tiny memory trail for UI? Prefer full skip except force.
-    }
-    if (!this._enabled) {
+    const isError = level === 'ERROR';
+    if (!this._enabled && !isError) {
       return;
     }
 
@@ -113,13 +110,20 @@ class LoggerService {
       this._lines.length = this._maxMemoryLines;
     }
 
-    if (this._mirrorToConsole) {
-      // eslint-disable-next-line no-console
-      console.log(line);
+    if (this._mirrorToConsole && (this._enabled || isError)) {
+      if (isError) {
+        // eslint-disable-next-line no-console
+        console.error(line);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(line);
+      }
     }
 
-    this._writeQueue = this._writeQueue.then(() => this._appendToFile(line)).catch(() => {});
-    await this._writeQueue;
+    if (this._enabled) {
+      this._writeQueue = this._writeQueue.then(() => this._appendToFile(line)).catch(() => {});
+      await this._writeQueue;
+    }
   }
 
   /**
@@ -139,6 +143,32 @@ class LoggerService {
   }
 
   /**
+   * Read startup-error.log if the app failed before the logger was ready.
+   * @param {number} [maxLines=50]
+   * @returns {Promise<string[]>}
+   */
+  async readStartupErrorLines(maxLines = 50) {
+    try {
+      const filePath = path.join(this._logsDir, 'startup-error.log');
+      const raw = await fs.readFile(filePath, 'utf8');
+      const lines = raw.split(/\r?\n/).filter(Boolean);
+      return lines.slice(-maxLines);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        return [];
+      }
+      return [];
+    }
+  }
+
+  /**
+   * @returns {string}
+   */
+  getLogsDirPath() {
+    return this._logsDir;
+  }
+
+  /**
    * @returns {string}
    */
   _todayFilePath() {
@@ -149,7 +179,6 @@ class LoggerService {
     return path.join(this._logsDir, `${yyyy}-${mm}-${dd}.log`);
   }
 }
-
 module.exports = {
   LoggerService,
 };

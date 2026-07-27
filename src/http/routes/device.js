@@ -7,6 +7,9 @@ const { requireUnlock } = require('../middleware/requireUnlock');
  * @param {{
  *   authSessions: import('../../services/auth/AuthSessionService').AuthSessionService,
  *   zktecoService: import('../../services/zkteco/ZktecoService').ZktecoService,
+ *   admsPushService?: import('../../services/adms/AdmsPushService').AdmsPushService,
+ *   admsListenerManager?: import('../../services/adms/AdmsListenerManager').AdmsListenerManager,
+ *   configService?: import('../../services/config/ConfigService').ConfigService,
  *   attendanceOrchestrator?: import('../../services/orchestrator/AttendanceOrchestrator').AttendanceOrchestrator,
  * }} deps
  */
@@ -16,6 +19,29 @@ function createDeviceRouter(deps) {
 
   router.post('/test-device', gate, async (req, res, next) => {
     try {
+      const config = deps.configService ? await deps.configService.load() : null;
+      const pushMode =
+        config && (config.connectionMode === 'push' || config.connectionMode === 'both');
+
+      if (pushMode && deps.admsPushService) {
+        const adms = deps.admsPushService.getStatus();
+        const ok = adms.listening;
+        res.json({
+          ok: true,
+          data: {
+            success: ok,
+            message: ok
+              ? adms.connected
+                ? `ADMS push listener is active on port ${adms.port}. Device is connected.`
+                : `ADMS push listener is active on port ${adms.port}. Configure the device Cloud Server to this PC's IP and port, then reboot the device.`
+              : 'ADMS push listener is not running. Save configuration with push mode enabled.',
+            adapter: 'adms-push',
+            info: adms,
+          },
+        });
+        return;
+      }
+
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const result = await deps.zktecoService.testConnection({
         ip: body.deviceIp,
@@ -49,7 +75,9 @@ function createDeviceRouter(deps) {
 
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const employeeId = body.employeeId || '105';
-      const result = await deps.attendanceOrchestrator.testType(employeeId);
+      const result = await deps.attendanceOrchestrator.testType(employeeId, {
+        focusReady: Boolean(body.focusReady),
+      });
       res.json({
         ok: true,
         data: result,
@@ -99,12 +127,17 @@ function createDeviceRouter(deps) {
 
   router.post('/restart', gate, async (req, res, next) => {
     try {
+      if (deps.configService && deps.admsListenerManager) {
+        const config = await deps.configService.load();
+        await deps.admsListenerManager.sync(config);
+      }
       await deps.zktecoService.restart();
       res.json({
         ok: true,
         data: {
-          message: 'Device service restarted.',
+          message: 'Device and ADMS services restarted.',
           device: deps.zktecoService.getStatus(),
+          adms: deps.admsPushService ? deps.admsPushService.getStatus() : null,
         },
       });
     } catch (error) {

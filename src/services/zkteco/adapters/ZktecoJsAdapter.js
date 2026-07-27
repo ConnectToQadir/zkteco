@@ -4,6 +4,7 @@ const Zkteco = require('zkteco-js');
 const { BaseZkAdapter } = require('./BaseZkAdapter');
 const { AppError } = require('../../../utils/errors');
 const { withTimeout } = require('../../../utils/withTimeout');
+const { authenticateZktecoJsClient, installZktecoTransportCapture } = require('../zkDeviceAuth');
 
 /**
  * Primary adapter using zkteco-js.
@@ -22,7 +23,10 @@ class ZktecoJsAdapter extends BaseZkAdapter {
       this.endpoint.port,
       this.endpoint.timeoutMs,
       this.endpoint.udpInPort,
+      8184,
     );
+
+    installZktecoTransportCapture(client);
 
     await withTimeout(
       client.createSocket(),
@@ -36,6 +40,12 @@ class ZktecoJsAdapter extends BaseZkAdapter {
       }
       throw error;
     });
+
+    await withTimeout(
+      authenticateZktecoJsClient(client, this.endpoint.password),
+      this.endpoint.timeoutMs + 2000,
+      `Device authentication timed out for ${this.endpoint.ip}.`,
+    );
 
     try {
       await withTimeout(client.enableDevice(), 3000, 'enableDevice timed out.');
@@ -68,7 +78,8 @@ class ZktecoJsAdapter extends BaseZkAdapter {
 
   async getAttendances() {
     this._assertConnected();
-    return withTimeout(this._client.getAttendances(), 15000, 'getAttendances timed out.');
+    const timeoutMs = Math.max(this.endpoint.timeoutMs * 3, 20000);
+    return withTimeout(this._client.getAttendances(), timeoutMs, 'getAttendances timed out.');
   }
 
   /**

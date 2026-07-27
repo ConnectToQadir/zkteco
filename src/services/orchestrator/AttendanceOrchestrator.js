@@ -1,5 +1,10 @@
 'use strict';
 
+const { sleep } = require('../../utils/sleep');
+
+/** Pause before test typing so the user can focus the target window. */
+const TYPING_TEST_FOCUS_DELAY_MS = 3000;
+
 /**
  * Receives attendance punches and drives typing with duplicate + license checks.
  */
@@ -107,8 +112,9 @@ class AttendanceOrchestrator {
   /**
    * Manual test helper (settings UI / API).
    * @param {string} employeeId
+   * @param {{ focusReady?: boolean }} [options]
    */
-  async testType(employeeId) {
+  async testType(employeeId, options = {}) {
     const config = await this._configService.load();
     const license = await this._licenseGate.canType();
     if (!license.allowed) {
@@ -129,6 +135,10 @@ class AttendanceOrchestrator {
       };
     }
 
+    if (!options.focusReady) {
+      await sleep(TYPING_TEST_FOCUS_DELAY_MS);
+    }
+
     await this._keyboardTypingService.typeEmployeeId(String(employeeId || '').trim(), {
       delayMs: config.typingDelay,
       pressEnter: config.pressEnter,
@@ -143,7 +153,7 @@ class AttendanceOrchestrator {
 
     return {
       success: true,
-      message: `Typed "${employeeId}" into the focused window. Click the target field first, then run Test Typing.`,
+      message: `Typed "${employeeId}" into the focused window.`,
     };
   }
 }

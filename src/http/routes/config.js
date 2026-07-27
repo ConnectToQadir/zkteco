@@ -8,6 +8,7 @@ const { requireUnlock } = require('../middleware/requireUnlock');
  *   configService: import('../../services/config/ConfigService').ConfigService,
  *   authSessions: import('../../services/auth/AuthSessionService').AuthSessionService,
  *   zktecoService?: import('../../services/zkteco/ZktecoService').ZktecoService,
+ *   admsListenerManager?: import('../../services/adms/AdmsListenerManager').AdmsListenerManager,
  *   windowsStartupService?: import('../../services/startup/WindowsStartupService').WindowsStartupService,
  *   logger?: import('../../services/logger/LoggerService').LoggerService,
  * }} deps
@@ -31,6 +32,8 @@ function createConfigRouter(deps) {
       const patch = {
         deviceIp: body.deviceIp,
         devicePort: body.devicePort,
+        connectionMode: body.connectionMode,
+        admsPort: body.admsPort,
         httpPort: body.httpPort,
         typingDelay: body.typingDelay,
         duplicateSeconds: body.duplicateSeconds,
@@ -39,8 +42,8 @@ function createConfigRouter(deps) {
         logging: body.logging,
       };
 
-      if (typeof body.devicePassword === 'string') {
-        patch.devicePassword = body.devicePassword;
+      if (typeof body.devicePassword === 'string' && body.devicePassword.trim()) {
+        patch.devicePassword = body.devicePassword.trim();
       }
 
       const previous = await deps.configService.load();
@@ -53,20 +56,30 @@ function createConfigRouter(deps) {
           logging: saved.logging,
         });
       } else if (deps.logger) {
-        await deps.logger.info('Configuration changes', {
+        await deps.logger.info('Configuration saved', {
+          connectionMode: saved.connectionMode,
           deviceIp: saved.deviceIp,
-          httpPort: saved.httpPort,
-          autoStart: saved.autoStart,
+          admsPort: saved.admsPort,
         });
       }
 
       const deviceChanged =
         previous.deviceIp !== saved.deviceIp ||
         previous.devicePort !== saved.devicePort ||
-        previous.devicePassword !== saved.devicePassword;
+        previous.devicePassword !== saved.devicePassword ||
+        previous.connectionMode !== saved.connectionMode;
+
+      const admsChanged =
+        previous.connectionMode !== saved.connectionMode || previous.admsPort !== saved.admsPort;
 
       if (deviceChanged && deps.zktecoService) {
         await deps.zktecoService.restart();
+      }
+
+      let admsSynced = false;
+      if (admsChanged && deps.admsListenerManager) {
+        await deps.admsListenerManager.sync(saved);
+        admsSynced = true;
       }
 
       let startupSynced = false;
@@ -78,6 +91,10 @@ function createConfigRouter(deps) {
       let message = 'Configuration saved.';
       if (previous.httpPort !== saved.httpPort) {
         message = 'Configuration saved. Restart PunchType to apply the new HTTP port.';
+      } else if (admsSynced && deviceChanged) {
+        message = 'Configuration saved. ADMS listener and device service updated.';
+      } else if (admsSynced) {
+        message = 'Configuration saved. ADMS push listener updated.';
       } else if (deviceChanged && startupSynced) {
         message = 'Configuration saved. Device service restarted and Windows startup updated.';
       } else if (deviceChanged) {
@@ -94,6 +111,7 @@ function createConfigRouter(deps) {
           config: publicConfig,
           httpPortChanged: previous.httpPort !== saved.httpPort,
           deviceRestarted: deviceChanged,
+          admsSynced,
           startupSynced,
           message,
         },

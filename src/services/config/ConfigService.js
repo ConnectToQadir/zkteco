@@ -284,6 +284,8 @@ class ConfigService {
       devicePort: this._toInt(source.devicePort, defaults.devicePort),
       devicePassword:
         typeof source.devicePassword === 'string' ? source.devicePassword : defaults.devicePassword,
+      connectionMode: this._connectionMode(source.connectionMode, defaults.connectionMode),
+      admsPort: this._toInt(source.admsPort, defaults.admsPort),
       httpPort: this._toInt(source.httpPort, defaults.httpPort),
       typingDelay: this._toInt(source.typingDelay, defaults.typingDelay),
       duplicateSeconds: this._toInt(source.duplicateSeconds, defaults.duplicateSeconds),
@@ -309,6 +311,12 @@ class ConfigService {
     }
     if (config.httpPort < 1 || config.httpPort > 65535) {
       throw new AppError('HTTP port must be between 1 and 65535.', 400, 'INVALID_HTTP_PORT');
+    }
+    if (config.admsPort < 1 || config.admsPort > 65535) {
+      throw new AppError('ADMS port must be between 1 and 65535.', 400, 'INVALID_ADMS_PORT');
+    }
+    if (config.httpPort === config.admsPort) {
+      throw new AppError('Settings HTTP port and ADMS port must be different.', 400, 'PORT_CONFLICT');
     }
     if (config.typingDelay < 0 || config.typingDelay > 5000) {
       throw new AppError('Typing delay must be between 0 and 5000 ms.', 400, 'INVALID_TYPING_DELAY');
@@ -368,6 +376,19 @@ class ConfigService {
     }
     if (value === 'false' || value === 0 || value === '0') {
       return false;
+    }
+    return fallback;
+  }
+
+  /**
+   * @param {unknown} value
+   * @param {'pull' | 'push' | 'both'} fallback
+   * @returns {'pull' | 'push' | 'both'}
+   */
+  _connectionMode(value, fallback) {
+    const mode = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (mode === 'pull' || mode === 'push' || mode === 'both') {
+      return mode;
     }
     return fallback;
   }

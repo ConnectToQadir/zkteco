@@ -12,6 +12,15 @@ const {
 } = require('./adapters/MockZkAdapter');
 const { normalizePunch } = require('../../types/attendance');
 
+/** Stop retrying alternate adapters when auth cannot succeed on the first attempt. */
+const FATAL_DEVICE_AUTH_CODES = new Set([
+  'DEVICE_AUTH_FAILED',
+  'DEVICE_AUTH_LEGACY_UNSUPPORTED',
+  'DEVICE_AUTH_USE_ZERO',
+  'DEVICE_PASSWORD_REQUIRED',
+  'DEVICE_CONNECT_UNEXPECTED',
+]);
+
 /**
  * Manages a single ZKTeco device connection with forever-retry reconnect.
  * Emits: punch, connected, disconnected, deviceError, state
@@ -125,7 +134,7 @@ class ZktecoService extends EventEmitter {
       ip: override.ip || config.deviceIp,
       port: override.port || config.devicePort,
       password: override.password !== undefined ? override.password : config.devicePassword,
-      timeoutMs: 5000,
+      timeoutMs: 15000,
       udpInPort: 5200,
     };
 
@@ -187,6 +196,17 @@ class ZktecoService extends EventEmitter {
     while (this._running) {
       const config = await this._configService.load();
       const useMock = isMockDeviceEnabled() || isMockDeviceIp(config.deviceIp);
+      const pullEnabled = config.connectionMode === 'pull' || config.connectionMode === 'both';
+
+      if (!pullEnabled && !useMock) {
+        this._connected = false;
+        this._mode = 'push';
+        this._adapterName = 'adms-push';
+        this._lastError = null;
+        this.emit('state', this.getStatus());
+        await sleep(5000);
+        continue;
+      }
 
       if (!config.deviceIp && !useMock) {
         this._connected = false;
@@ -201,13 +221,15 @@ class ZktecoService extends EventEmitter {
         ip: useMock ? config.deviceIp || 'mock' : config.deviceIp,
         port: config.devicePort,
         password: config.devicePassword,
-        timeoutMs: 5000,
+        timeoutMs: 15000,
         udpInPort: 5200,
       };
 
+      let lastConnectError = null;
       try {
         await this._connectAndListen(endpoint);
       } catch (error) {
+        lastConnectError = error;
         this._connected = false;
         this._lastError = getErrorMessage(error);
         this._clearHealthTimer();
@@ -223,11 +245,19 @@ class ZktecoService extends EventEmitter {
       }
 
       this._reconnectAttempt += 1;
-      const delay = Math.min(60000, 1000 * 2 ** Math.min(this._reconnectAttempt, 5));
-      await this._logger.info('Device reconnect scheduled', {
-        attempt: this._reconnectAttempt,
-        delayMs: delay,
-      });
+      const authError =
+        lastConnectError &&
+        typeof lastConnectError === 'object' &&
+        FATAL_DEVICE_AUTH_CODES.has(/** @type {{ code?: string }} */ (lastConnectError).code || '');
+      const delay = authError
+        ? Math.min(300000, 60000 * Math.min(this._reconnectAttempt, 5))
+        : Math.min(60000, 1000 * 2 ** Math.min(this._reconnectAttempt, 5));
+      if (this._reconnectAttempt === 1 || this._reconnectAttempt % 10 === 0) {
+        await this._logger.info('Device reconnect scheduled', {
+          attempt: this._reconnectAttempt,
+          delayMs: delay,
+        });
+      }
       await sleep(delay);
     }
   }
@@ -245,6 +275,7 @@ class ZktecoService extends EventEmitter {
         ];
 
     let lastError = null;
+    const onPunch = (punch) => this._handlePunch(punch);
 
     for (const candidate of candidates) {
       if (!this._running) {
@@ -252,81 +283,140 @@ class ZktecoService extends EventEmitter {
       }
 
       const adapter = candidate.create();
-      let sessionStarted = false;
-
       try {
         await adapter.connect();
-        sessionStarted = true;
-        this._adapter = adapter;
-        this._adapterName = adapter.name;
-        this._connected = true;
-        this._reconnectAttempt = 0;
-        this._lastError = null;
-        this._lastConnectedAt = new Date().toISOString();
-        this.emit('connected', { adapter: adapter.name, ip: endpoint.ip });
-        await this._logger.info('Device connected', { adapter: adapter.name, ip: endpoint.ip });
-        this.emit('state', this.getStatus());
-        this._startHealthMonitor(adapter);
-
-        const onPunch = (punch) => this._handlePunch(punch);
-        adapter.onUnparsedPunch = (raw) => {
-          void this._logger.info('Punch payload ignored', {
-            adapter: adapter.name,
-            raw: summarizePunchRaw(raw),
-          });
-        };
-        adapter.onPollSeeded = (meta) => {
-          void this._logger.info('Attendance poll seeded', {
-            adapter: adapter.name,
-            total: meta.total,
-            tracked: meta.tracked,
-            ignored: meta.ignored,
-          });
-        };
-
-        // Polling is the reliable path across ZK firmwares.
-        // Realtime often stays "connected" forever without ever delivering punches,
-        // and concurrent getInfo during realtime can also stall the event stream.
-        this._mode = 'polling';
-        this.emit('state', this.getStatus());
-        await this._logger.info('Device listening (polling)', {
-          adapter: adapter.name,
-          intervalMs: 1500,
-        });
-        this._pollSignal = { stopped: false };
-        await adapter.listenByPolling(onPunch, {
-          intervalMs: 1500,
-          signal: this._pollSignal,
-        });
-
+        this._beginAdapterSession(adapter, endpoint);
+        this._bindAdapterCallbacks(adapter);
+        await this._listenByPolling(adapter, onPunch);
         throw new Error('Device listener ended.');
       } catch (error) {
-        this._clearHealthTimer();
-        try {
-          if (adapter.stopRealtime) {
-            adapter.stopRealtime();
-          }
-        } catch (_stopError) {
-          // ignore
-        }
-        try {
-          await adapter.disconnect();
-        } catch (_disconnectError) {
-          // ignore
-        }
-        this._adapter = null;
-        this._connected = false;
-
-        // After a live session, bubble up so the outer loop reconnects with backoff.
-        if (sessionStarted) {
+        lastError = error;
+        await this._logger.error('Adapter polling failed; trying next adapter', {
+          adapter: adapter.name,
+          error: getErrorMessage(error),
+        });
+        await this._teardownAdapter(adapter);
+        if (isFatalDeviceAuthError(error)) {
           throw error;
         }
+      }
+    }
 
+    for (const candidate of candidates) {
+      if (!this._running) {
+        return;
+      }
+
+      const adapter = candidate.create();
+      try {
+        await adapter.connect();
+        this._beginAdapterSession(adapter, endpoint);
+        this._bindAdapterCallbacks(adapter);
+        await this._listenByRealtime(adapter, onPunch);
+        throw new Error('Device listener ended.');
+      } catch (error) {
         lastError = error;
+        await this._logger.error('Adapter realtime failed; trying next adapter', {
+          adapter: adapter.name,
+          error: getErrorMessage(error),
+        });
+        await this._teardownAdapter(adapter);
+        if (isFatalDeviceAuthError(error)) {
+          throw error;
+        }
       }
     }
 
     throw lastError || new Error('All device adapters failed.');
+  }
+
+  /**
+   * @param {import('./adapters/ZktecoJsAdapter').ZktecoJsAdapter | import('./adapters/NodeZkLibAdapter').NodeZkLibAdapter | import('./adapters/MockZkAdapter').MockZkAdapter} adapter
+   * @param {import('../../types/attendance').DeviceEndpoint} endpoint
+   */
+  _beginAdapterSession(adapter, endpoint) {
+    this._adapter = adapter;
+    this._adapterName = adapter.name;
+    this._connected = true;
+    this._reconnectAttempt = 0;
+    this._lastError = null;
+    this._lastConnectedAt = new Date().toISOString();
+    this.emit('connected', { adapter: adapter.name, ip: endpoint.ip });
+    void this._logger.info('Device connected', { adapter: adapter.name, ip: endpoint.ip });
+    this.emit('state', this.getStatus());
+  }
+
+  /**
+   * @param {import('./adapters/ZktecoJsAdapter').ZktecoJsAdapter | import('./adapters/NodeZkLibAdapter').NodeZkLibAdapter | import('./adapters/MockZkAdapter').MockZkAdapter} adapter
+   */
+  _bindAdapterCallbacks(adapter) {
+    adapter.onUnparsedPunch = () => {};
+    adapter.onPollSeeded = () => {};
+  }
+
+  /**
+   * @param {import('./adapters/ZktecoJsAdapter').ZktecoJsAdapter | import('./adapters/NodeZkLibAdapter').NodeZkLibAdapter | import('./adapters/MockZkAdapter').MockZkAdapter} adapter
+   */
+  async _teardownAdapter(adapter) {
+    this._clearHealthTimer();
+    try {
+      if (adapter.stopRealtime) {
+        adapter.stopRealtime();
+      }
+    } catch (_stopError) {
+      // ignore
+    }
+    try {
+      await adapter.disconnect();
+    } catch (_disconnectError) {
+      // ignore
+    }
+    this._adapter = null;
+    this._connected = false;
+    this._pollSignal.stopped = true;
+  }
+
+  /**
+   * @param {import('./adapters/ZktecoJsAdapter').ZktecoJsAdapter | import('./adapters/NodeZkLibAdapter').NodeZkLibAdapter | import('./adapters/MockZkAdapter').MockZkAdapter} adapter
+   * @param {(punch: import('../../types/attendance').AttendancePunch) => void} onPunch
+   */
+  async _listenByPolling(adapter, onPunch) {
+    this._mode = 'polling';
+    this.emit('state', this.getStatus());
+    await this._logger.info('Device listening (polling)', {
+      adapter: adapter.name,
+      intervalMs: 1500,
+    });
+    this._pollSignal = { stopped: false };
+    await adapter.listenByPolling(onPunch, {
+      intervalMs: 1500,
+      signal: this._pollSignal,
+      maxConsecutiveErrors: 3,
+      onPollError: (error, attempt) => {
+        const payload = {
+          adapter: adapter.name,
+          attempt,
+          error: getErrorMessage(error),
+        };
+        if (attempt >= 3) {
+          void this._logger.error('Attendance poll failed', payload);
+        }
+      },
+    });
+  }
+
+  /**
+   * @param {import('./adapters/ZktecoJsAdapter').ZktecoJsAdapter | import('./adapters/NodeZkLibAdapter').NodeZkLibAdapter | import('./adapters/MockZkAdapter').MockZkAdapter} adapter
+   * @param {(punch: import('../../types/attendance').AttendancePunch) => void} onPunch
+   */
+  async _listenByRealtime(adapter, onPunch) {
+    this._pollSignal = { stopped: true };
+    this._mode = 'realtime';
+    this.emit('state', this.getStatus());
+    await this._logger.info('Device listening (realtime)', {
+      adapter: adapter.name,
+    });
+    await adapter.listenRealtime(onPunch);
   }
 
   /**
@@ -362,6 +452,14 @@ class ZktecoService extends EventEmitter {
     }
     this._handlePunch(punch);
     return punch;
+  }
+
+  /**
+   * Accept a punch from ADMS push (SenseFace / PUSH protocol devices).
+   * @param {import('../../types/attendance').AttendancePunch} punch
+   */
+  receivePushPunch(punch) {
+    this._handlePunch(punch);
   }
 
   /**
@@ -441,25 +539,13 @@ module.exports = {
 };
 
 /**
- * @param {unknown} raw
- * @returns {object | string}
+ * @param {unknown} error
+ * @returns {boolean}
  */
-function summarizePunchRaw(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return String(raw);
-  }
-  const record = /** @type {Record<string, unknown>} */ (raw);
-  const keys = Object.keys(record).slice(0, 12);
-  const out = {};
-  for (const key of keys) {
-    const value = record[key];
-    if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      out[key] = value;
-    } else if (value instanceof Date) {
-      out[key] = value.toISOString();
-    } else {
-      out[key] = typeof value;
-    }
-  }
-  return out;
+function isFatalDeviceAuthError(error) {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      FATAL_DEVICE_AUTH_CODES.has(/** @type {{ code?: string }} */ (error).code || ''),
+  );
 }

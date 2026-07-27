@@ -10,9 +10,9 @@
     <div class="page">
       <header class="header">
         <div>
-          <p class="eyebrow">Local settings</p>
+          <p class="eyebrow">Local control panel</p>
           <h1>PunchType</h1>
-          <p class="subtitle">ZKTeco punch → keyboard typing utility</p>
+          <p class="subtitle">ZKTeco attendance → automatic keyboard typing</p>
         </div>
         <div class="header-meta">
           <span id="statusBadge" class="badge">Loading…</span>
@@ -28,8 +28,7 @@
         <div class="license-callout">
           <p class="help"><strong>Activate PunchType</strong></p>
           <p class="hint">
-            Download the app from our website, then send us this Machine ID after payment.
-            We will email your license file — unlock settings and upload it to activate typing.
+            Send us your Machine ID after payment. We will email your license file — upload it here to activate typing.
           </p>
           <label>
             Machine ID
@@ -50,31 +49,77 @@
             Confirm PIN
             <input id="confirmPinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off" />
           </label>
-          <button type="submit" id="gateSubmit" class="btn btn-primary">Unlock</button>
+          <div class="actions">
+            <button type="submit" id="gateSubmit" class="btn btn-primary">Unlock</button>
+          </div>
         </form>
         <p id="gateMessage" class="message" role="status"></p>
       </section>
 
       <section id="settingsPanel" class="hidden">
+        <div id="systemAlert" class="alert error hidden" role="alert"></div>
+
+        <div class="panel">
+          <div class="section-head">
+            <h2>Service status</h2>
+            <p>Live overview — refreshes automatically</p>
+          </div>
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="label">Connection</div>
+              <div id="statusConnection" class="value">—</div>
+            </div>
+            <div class="status-card">
+              <div class="label">License</div>
+              <div id="statusLicense" class="value">—</div>
+            </div>
+            <div class="status-card">
+              <div class="label">Windows startup</div>
+              <div id="statusStartup" class="value">—</div>
+            </div>
+          </div>
+        </div>
+
         <form id="configForm" class="panel form">
-          <h2>Device</h2>
+          <div class="section-head">
+            <h2>Device</h2>
+            <p>Pull SDK or ADMS push (SenseFace 2A)</p>
+          </div>
           <div class="grid">
+            <label class="full">
+              Connection mode
+              <select id="connectionMode" name="connectionMode">
+                <option value="pull">Pull SDK (classic ZKTeco on port 4370)</option>
+                <option value="push">ADMS push (SenseFace 2A / PUSH protocol)</option>
+                <option value="both">Both (pull + ADMS push)</option>
+              </select>
+              <span class="hint">SenseFace 2A with <strong>PUSH Protocol</strong> requires <strong>ADMS push</strong>.</span>
+            </label>
             <label>
               Device IP
               <input id="deviceIp" name="deviceIp" type="text" placeholder="192.168.1.201 or mock" />
+              <span class="hint">Pull mode only. Leave blank for push-only.</span>
             </label>
             <label>
               Device Port
               <input id="devicePort" name="devicePort" type="number" min="1" max="65535" />
             </label>
+            <label>
+              ADMS push port
+              <input id="admsPort" name="admsPort" type="number" min="1" max="65535" />
+              <span class="hint">Match Cloud Server port on the device (default 8088).</span>
+            </label>
             <label class="full">
               Device Communication Password
               <input id="devicePassword" name="devicePassword" type="password" placeholder="Leave blank if not required" autocomplete="off" />
-              <span class="hint">Optional. Leave blank when your device does not use a communication password.</span>
+              <span class="hint">Numeric Comm Key from Comm → PC Connection. Enter <strong>0</strong> if disabled on device.</span>
             </label>
           </div>
 
-          <h2>Typing</h2>
+          <div class="section-head">
+            <h2>Typing</h2>
+            <p>Keyboard simulation settings</p>
+          </div>
           <div class="grid">
             <label>
               Typing Delay (ms)
@@ -90,7 +135,10 @@
             </label>
           </div>
 
-          <h2>Application</h2>
+          <div class="section-head">
+            <h2>Application</h2>
+            <p>Local service options</p>
+          </div>
           <div class="grid">
             <label>
               Settings HTTP Port
@@ -99,11 +147,11 @@
             </label>
             <label class="checkbox">
               <input id="autoStart" name="autoStart" type="checkbox" />
-              Start with Windows
+              Start with Windows (runs in background)
             </label>
             <label class="checkbox">
               <input id="logging" name="logging" type="checkbox" />
-              Enable logging
+              Enable file logging
             </label>
           </div>
           <p id="startupHint" class="hint">Windows startup status loads with the page.</p>
@@ -116,23 +164,24 @@
             <button type="button" id="restartBtn" class="btn">Restart Service</button>
           </div>
           <p class="hint">
-            On Mac, set Device IP to <code>mock</code> (or run <code>npm run mac</code>) and use Simulate Punch.
-            Real keyboard injection only works on Windows.
+            <strong>SenseFace 2A:</strong> PUSH Protocol + T&amp;A PUSH → Cloud Server = this PC's LAN IP + ADMS port above.
+            Installed builds run in background with <code>--background</code> and auto-start via Windows Run registry.
           </p>
           <p id="configMessage" class="message" role="status"></p>
         </form>
 
         <div class="panel">
-          <h2>License Information</h2>
+          <div class="section-head">
+            <h2>License</h2>
+            <p>Activation and Machine ID</p>
+          </div>
           <dl class="meta-list" id="licenseInfo">
             <div><dt>Machine ID</dt><dd id="machineId">—</dd></div>
             <div><dt>Customer Name</dt><dd id="customerName">—</dd></div>
             <div><dt>License Status</dt><dd id="licenseStatus">—</dd></div>
             <div><dt>Issued At</dt><dd id="licenseIssuedAt">—</dd></div>
           </dl>
-          <p id="licenseMessage" class="hint">
-            After payment, send us your Machine ID. We will email license.dat — upload it below to activate.
-          </p>
+          <p id="licenseMessage" class="hint">Upload license.dat after payment to activate typing.</p>
 
           <div class="upload-box">
             <label>
@@ -167,9 +216,17 @@
         </div>
 
         <div class="panel">
-          <h2>Recent Logs</h2>
-          <pre id="logsView" class="logs">No logs yet.</pre>
-          <button type="button" id="refreshLogsBtn" class="btn">Refresh Logs</button>
+          <div class="section-head">
+            <h2>Logs &amp; errors</h2>
+            <p>Errors always appear here, even when file logging is off</p>
+          </div>
+          <p id="logsPath" class="logs-meta">Log folder: —</p>
+          <div class="logs-wrap">
+            <div id="logsView" class="logs">No logs yet.</div>
+          </div>
+          <div class="actions">
+            <button type="button" id="refreshLogsBtn" class="btn">Refresh Logs</button>
+          </div>
         </div>
       </section>
 

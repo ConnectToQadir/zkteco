@@ -55,6 +55,7 @@ function normalizePunch(raw, deviceIp, source) {
   const timeValue =
     record.recordTime ??
     record.attTime ??
+    record.record_time ??
     record.timestamp ??
     record.time ??
     record.dateTime ??

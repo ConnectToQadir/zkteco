@@ -4,6 +4,7 @@
   "description": "PunchType — ZKTeco attendance punch to keyboard typing utility",
   "main": "src/index.js",
   "scripts": {
+    "postinstall": "node scripts/patch-zkteco-js.js",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "mac": "PUNCHTYPE_MOCK_DEVICE=1 node src/index.js",

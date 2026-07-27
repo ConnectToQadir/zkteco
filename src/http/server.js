@@ -3,7 +3,7 @@
 const express = require('express');
 const { getPublicDir } = require('../utils/paths');
 const { localOnly } = require('./middleware/localOnly');
-const { errorHandler } = require('./middleware/errorHandler');
+const { createErrorHandler } = require('./middleware/errorHandler');
 const { createStatusRouter } = require('./routes/status');
 const { createAuthRouter } = require('./routes/auth');
 const { createConfigRouter } = require('./routes/config');
@@ -32,7 +32,7 @@ function createHttpServer(deps) {
   api.use(createStubRouter(deps));
   app.use('/api', api);
 
-  app.use(errorHandler);
+  app.use(createErrorHandler(deps));
 
   return app;
 }
